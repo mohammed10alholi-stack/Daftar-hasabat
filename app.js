@@ -29,6 +29,8 @@ const DEFAULT_EXPENSE_CATS = [
 const EXTRA_CATS = [
   { id: "debt_payment", label: "تسديد دَين", icon: "📌" },
   { id: "debt_collect", label: "تحصيل دَين", icon: "🤝" },
+  { id: "debt_lend", label: "دَين أعطيته", icon: "🤝" },
+  { id: "debt_borrow", label: "دَين أخذته", icon: "📌" },
 ];
 const LEGACY_CATS = { lab_supplies: { label: "مصاريف الشغل", icon: "🏢" } };
 const EMOJIS = ["🍽️","🚗","🧾","💊","🛍️","🏠","👨‍👩‍👧","🏢","🔧","💼","🔬","🧰","🎁","💰","📱","🏦","👛","📦","⚡","🚌","☕","🍞","👶","🎓","🩺","🛒","🧹","🔌","✈️","🎉","➕","•"];
@@ -95,6 +97,7 @@ function walletIcon(name) {
   return "👛";
 }
 function daysBetween(a, b) { return Math.round((new Date(b) - new Date(a)) / 86400000); }
+function addDays(dateStr, n){ const d=new Date(dateStr); d.setDate(d.getDate()+n); return d.toISOString().slice(0,10); }
 
 /* ============================================================
    نظام الترخيص (تجربة + تفعيل بكود)
@@ -138,10 +141,26 @@ function hmacSha256(keyStr,msgStr){
 const _B32="0123456789ABCDEFGHJKMNPQRSTVWXYZ";
 function _toB32(bytes,len){ let bits=0,val=0,out=""; for(let i=0;i<bytes.length&&out.length<len;i++){ val=((val<<8)|bytes[i])>>>0; bits+=8; while(bits>=5&&out.length<len){ out+=_B32[(val>>>(bits-5))&31]; bits-=5; } } return out; }
 function normName(n){ return (n||"").trim().replace(/\s+/g," ").toLowerCase(); }
-function makeCode(name, device){ const d=hmacSha256(LIC_SECRET, normName(name)+"|"+(device||"")); const r=_toB32(d,12); return r.slice(0,4)+"-"+r.slice(4,8)+"-"+r.slice(8,12); }
-function checkCode(name,code,device){ const c=(code||"").toUpperCase().replace(/[^0-9A-Z]/g,""); return c.length>0 && c===makeCode(name,device).replace(/-/g,""); }
+const PLAN_DAYS = { M:30, H:180, Y:365 };
+const PLAN_LABEL = { M:"شهر", H:"6 شهور", Y:"سنة", life:"دائم" };
+function _codeBody(name, device, planKey){ const d=hmacSha256(LIC_SECRET, normName(name)+"|"+(device||"")+(planKey?("|"+planKey):"")); const r=_toB32(d,12); return r.slice(0,4)+"-"+r.slice(4,8)+"-"+r.slice(8,12); }
+function makeCode(name, device){ return _codeBody(name, device, ""); }                 // دائم (للمالك/التوافق القديم)
+function makeCodePlan(name, device, plan){ return plan+"-"+_codeBody(name, device, plan); } // باشتراك بمدة
+function parseCode(name, code, device){
+  const raw=(code||"").toUpperCase().replace(/\s/g,"");
+  const parts=raw.split("-").filter(Boolean);
+  if(parts.length===4 && parts[0].length===1 && PLAN_DAYS[parts[0]]){
+    const plan=parts[0], body=parts.slice(1).join("");
+    if(body && body===_codeBody(name,device,plan).replace(/-/g,"")) return { valid:true, plan, days:PLAN_DAYS[plan] };
+    return { valid:false };
+  }
+  const body=parts.join("");
+  if(body && body===makeCode(name,device).replace(/-/g,"")) return { valid:true, plan:"life", days:null };
+  return { valid:false };
+}
+function checkCode(name,code,device){ return parseCode(name,code,device).valid; }
 
-let lic = { installedAt: null, pro: false, name: "", code: "", device: "" };
+let lic = { installedAt: null, pro: false, name: "", code: "", device: "", plan: "", activatedAt: null, expiry: null };
 function getDeviceId(){
   if (lic.device) return lic.device;
   // بصمة جهاز عشوائية ثابتة لهذا الجهاز
@@ -157,12 +176,20 @@ function loadLic(){
 }
 function saveLic(){ try{ localStorage.setItem(LIC_KEY, JSON.stringify(lic)); }catch(e){} }
 function licStatus(){
-  if(lic.pro && checkCode(lic.name, lic.code, lic.device)) return { kind:"pro" };
+  if(lic.pro && checkCode(lic.name, lic.code, lic.device)){
+    if(!lic.expiry) return { kind:"pro", plan:"life" };               // دائم (المالك أو كود قديم)
+    const left = daysBetween(todayStr(), lic.expiry);
+    if(left>=0) return { kind:"pro", plan:lic.plan, days:left, expiry:lic.expiry };
+    return { kind:"expired_sub" };                                     // انتهى الاشتراك
+  }
   const used = Math.max(0, daysBetween(lic.installedAt, todayStr()));
   const left = TRIAL_DAYS - used;
   return left>0 ? { kind:"trial", days:left } : { kind:"expired" };
 }
-function tryActivate(name,code){ const dev=getDeviceId(); if(checkCode(name,code,dev)){ lic.pro=true; lic.name=name.trim(); lic.code=code.trim(); saveLic(); return true; } return false; }
+function tryActivate(name,code){ const dev=getDeviceId(); const r=parseCode(name,code,dev);
+  if(r.valid){ lic.pro=true; lic.name=name.trim(); lic.code=code.trim(); lic.plan=r.plan;
+    lic.activatedAt=todayStr(); lic.expiry = r.days ? addDays(todayStr(), r.days) : null; saveLic(); return true; }
+  return false; }
 const OWNER_NAME = "mohrft"; // = normName("MohRft")
 function isOwner(){ return lic.pro && checkCode(lic.name, lic.code, lic.device) && normName(lic.name)===OWNER_NAME; }
 
@@ -241,13 +268,16 @@ const app = () => document.getElementById("app");
 function render() {
   const a = app();
   const st = licStatus();
-  if (st.kind === "expired") {
-    a.innerHTML = lockHTML();
+  if (st.kind === "expired" || st.kind === "expired_sub") {
+    a.innerHTML = lockHTML(st.kind);
     const sub = a.querySelector("[data-locksub]"); if (sub) sub.onclick = openSubscribe;
     const btn = a.querySelector("[data-lockact]"); if (btn) btn.onclick = openActivate;
     return;
   }
-  a.innerHTML = headerHTML() + curPillsHTML() + (st.kind==="trial"?trialBannerHTML(st.days):"") + tabsHTML() + tabContentHTML() + creditHTML() + fabHTML();
+  let banner = "";
+  if (st.kind === "trial") banner = trialBannerHTML(st.days);
+  else if (st.kind === "pro" && st.plan && st.plan !== "life") banner = subBannerHTML(st);
+  a.innerHTML = headerHTML() + curPillsHTML() + banner + tabsHTML() + tabContentHTML() + creditHTML() + fabHTML();
   attachHandlers();
 }
 
@@ -282,13 +312,22 @@ function maybeWelcome(){ try{ if(localStorage.getItem(WELCOME_KEY)) return; }cat
 function trialBannerHTML(days){
   return `<div class="aw-trial"><span>النسخة التجريبية — باقي <b>${days}</b> يوم</span><button class="aw-trial-btn" data-act="subscribe">اشترك</button></div>`;
 }
-function lockHTML(){
+function subBannerHTML(st){
+  const soon = st.days<=5;
+  const dtxt = st.days===0 ? "بينتهي اليوم" : ("باقي <b>"+st.days+"</b> يوم");
+  return `<div class="aw-trial aw-sub ${soon?"warn":"ok"}">
+    <span>اشتراكك (${PLAN_LABEL[st.plan]||""}) فعّال — ${dtxt}</span>
+    ${soon?`<button class="aw-trial-btn" data-act="subscribe">جدّد</button>`:`<span class="aw-sub-exp">ينتهي ${esc(st.expiry)}</span>`}
+  </div>`;
+}
+function lockHTML(kind){
+  const renew = kind==="expired_sub";
   return `<header class="aw-top"><div class="aw-brand"><span class="aw-brand-mark">دفتر</span> الحسابات</div></header>
     <section class="aw-lock">
       <div class="aw-lock-emoji">🔒</div>
-      <div class="aw-lock-title">انتهت الفترة التجريبية</div>
-      <div class="aw-lock-text">عجبك التطبيق؟ اشترك وكمّل استخدامه. حوّل الاشتراك وأرسل الإشعار على واتساب، وبيوصلك كود التفعيل.</div>
-      <button class="aw-btn primary aw-lock-btn" data-locksub>اشترك الآن</button>
+      <div class="aw-lock-title">${renew?"انتهى اشتراكك":"انتهت الفترة التجريبية"}</div>
+      <div class="aw-lock-text">${renew?"جدّد اشتراكك وكمّل استخدام التطبيق. حوّل قيمة التجديد وأرسل الإشعار على واتساب، وبيوصلك كود جديد.":"عجبك التطبيق؟ اشترك وكمّل استخدامه. حوّل الاشتراك وأرسل الإشعار على واتساب، وبيوصلك كود التفعيل."}</div>
+      <button class="aw-btn primary aw-lock-btn" data-locksub>${renew?"جدّد الآن":"اشترك الآن"}</button>
       <button class="aw-lock-link" data-lockact>عندي كود — تفعيل</button>
     </section>
     <div class="aw-credit">تم تطوير هذا البرنامج بواسطة مختبر الوتين الطبي 🔬</div>`;
@@ -508,9 +547,17 @@ function debtsHTML() {
   const reminders = ds.map((d)=>({d,i:dueInfo(d)})).filter((x)=>x.i && x.i.kind!=="later")
     .sort((a,b)=> new Date(a.d.dueDate)-new Date(b.d.dueDate));
 
-  const list = ds.filter((d)=>state.debtFilter==="all"||d.type===state.debtFilter)
-    .filter((d)=> state.showSettled?true:(d.paid||0)<d.amount)
-    .sort((a,b)=>{ const sa=(a.paid||0)>=a.amount?1:0, sb=(b.paid||0)>=b.amount?1:0; if(sa!==sb)return sa-sb; return a.date<b.date?1:-1; });
+  const visible = ds.filter((d)=>state.debtFilter==="all"||d.type===state.debtFilter)
+    .filter((d)=> state.showSettled?true:(d.paid||0)<d.amount);
+  const gmap={};
+  visible.forEach((d)=>{ const k=normName(d.name)+"|"+d.type;
+    if(!gmap[k]) gmap[k]={name:d.name,type:d.type,cur:d.cur,items:[],amount:0,paid:0};
+    const g=gmap[k]; g.items.push(d); g.amount+=d.amount; g.paid+=(d.paid||0); });
+  const groups=Object.values(gmap).map((g)=>{ g.rem=Math.max(0,g.amount-g.paid); g.settled=g.paid>=g.amount;
+    let nd=null; g.items.forEach((d)=>{ if((d.paid||0)>=d.amount)return; const di=dueInfo(d);
+      if(di&&di.kind!=="later"){ if(!nd||(d.dueDate&&new Date(d.dueDate)<new Date(nd.date))) nd={info:di,date:d.dueDate}; } });
+    g.due=nd?nd.info:null; return g; })
+    .sort((a,b)=>{ if(a.settled!==b.settled) return a.settled-b.settled; return b.rem-a.rem; });
 
   let html = `<section class="aw-ledger aw-ledger-debt">
       <div class="aw-ledger-label">صافي الديون — ${esc(state.activeCur)}</div>
@@ -532,36 +579,75 @@ function debtsHTML() {
       ${[["all","الكل"],["owed_to_me","إلي"],["i_owe","عليّ"]].map(([id,l])=>`<button class="aw-chip ${state.debtFilter===id?"on":""}" data-debtf="${id}">${l}</button>`).join("")}
       <button class="aw-chip aw-chip-toggle ${state.showSettled?"on":""}" data-act="toggleSettled">${state.showSettled?"إخفاء المسدّدة":"إظهار المسدّدة"}</button>
     </div>
-    <section class="aw-list"><div class="aw-list-head"><span>الديون</span><span class="aw-list-count">${list.length}</span></div>`;
+    <section class="aw-list"><div class="aw-list-head"><span>الأشخاص</span><span class="aw-list-count">${groups.length}</span></div>`;
 
-  if (!list.length) {
+  if (!groups.length) {
     html += `<div class="aw-empty">ما في ديون بعملة ${esc(state.activeCur)}.<br>اضغط <b>+</b> تحت لتسجّل دَين إلك أو عليك.</div>`;
   } else {
-    html += list.map((d)=>{ const paid=d.paid||0, rem=Math.max(0,d.amount-paid), settled=paid>=d.amount;
-      const pct=d.amount?Math.min(100,(paid/d.amount)*100):0, mine=d.type==="owed_to_me"; const di=dueInfo(d);
-      return `<div class="aw-item aw-debt-item ${settled?"settled":""}">
+    html += groups.map((g)=>{ const mine=g.type==="owed_to_me"; const pct=g.amount?Math.min(100,(g.paid/g.amount)*100):0;
+      return `<div class="aw-item aw-debt-item ${g.settled?"settled":""}" data-person="${esc(g.name)}" data-ptype="${g.type}">
         <div class="aw-item-icon ${mine?"in":"out"}">${mine?"🤝":"📌"}</div>
         <div class="aw-item-body">
-          <div class="aw-item-top"><span class="aw-item-cat">${esc(d.name||"بدون اسم")}</span>
-            <span class="aw-item-amt ${mine?"in":"out"}">${fmt(rem)} ${esc(d.cur)}</span></div>
+          <div class="aw-item-top"><span class="aw-item-cat">${esc(g.name||"بدون اسم")}</span>
+            <span class="aw-item-amt ${mine?"in":"out"}">${g.settled?"مسدّد":fmt(g.rem)+" "+esc(g.cur)}</span></div>
           <div class="aw-item-sub">
             <span class="aw-tag ${mine?"personal":"work"}">${mine?"إلي":"عليّ"}</span>
-            ${settled?`<span class="aw-tag settled-tag">مسدّد</span>`:(di&&di.kind!=="later"?`<span class="aw-tag ${di.cls}">${esc(di.label)}</span>`:"")}
-            ${(!settled&&paid>0)?`<span class="aw-note">سُدّد ${fmt(paid)} من ${fmt(d.amount)}</span>`:""}
-            ${d.note?`<span class="aw-note">${esc(d.note)}</span>`:""}
-            <span class="aw-date">${esc(d.date)}</span>
+            <span class="aw-tag">${g.items.length} ${g.items.length===1?"حركة":"حركات"}</span>
+            ${g.due?`<span class="aw-tag ${g.due.cls}">${esc(g.due.label)}</span>`:""}
+            ${(!g.settled&&g.paid>0)?`<span class="aw-note">سُدّد ${fmt(g.paid)} من ${fmt(g.amount)}</span>`:""}
           </div>
-          ${(!settled&&paid>0)?`<div class="aw-bar-track aw-debt-bar"><div class="aw-bar-fill paid" style="width:${pct}%"></div></div>`:""}
+          ${(!g.settled&&g.paid>0)?`<div class="aw-bar-track aw-debt-bar"><div class="aw-bar-fill paid" style="width:${pct}%"></div></div>`:""}
         </div>
-        <div class="aw-debt-actions">
-          ${!settled?`<button class="aw-pay" data-pay="${d.id}">سدّد</button>`:""}
-          <button class="aw-del" data-deld="${d.id}" aria-label="حذف">🗑</button>
-        </div>
+        <div class="aw-debt-actions"><span class="aw-chev">‹</span></div>
       </div>`;
     }).join("");
   }
   html += `</section>`;
   return html;
+}
+
+/* --- صفحة شخص: كل ديونه مجمّعة --- */
+function openPersonModal(name, type){
+  const mine = type==="owed_to_me";
+  const m = modalShell(esc(name||"بدون اسم"), `<div id="personBody"></div>`);
+  const body = m.sheet.querySelector("#personBody");
+  function entries(){ return state.debts
+    .filter((d)=>d.cur===state.activeCur && d.type===type && normName(d.name)===normName(name))
+    .sort((a,b)=>a.date<b.date?1:-1); }
+  function draw(){
+    const items=entries();
+    if(!items.length){ m.close(); render(); return; }
+    let amount=0,paid=0; items.forEach((d)=>{amount+=d.amount;paid+=(d.paid||0);});
+    const rem=Math.max(0,amount-paid);
+    body.innerHTML = `
+      <div class="aw-person-sum ${mine?"in":"out"}"><span>${mine?"إلك عنده":"عليك له"}</span><b>${fmt(rem)} ${esc(state.activeCur)}</b></div>
+      ${paid>0?`<div class="aw-mini-hint" style="text-align:center">سُدّد ${fmt(paid)} من أصل ${fmt(amount)}</div>`:""}
+      <div class="aw-person-list">
+        ${items.map((d)=>{ const r=Math.max(0,d.amount-(d.paid||0)), st=(d.paid||0)>=d.amount; const di=dueInfo(d);
+          return `<div class="aw-person-row ${st?"settled":""}">
+            <div class="aw-person-row-head">
+              <span class="aw-person-amt ${mine?"in":"out"}">${fmt(d.amount)} ${esc(d.cur)}</span>
+              <span class="aw-date">${esc(d.date)}</span>
+            </div>
+            <div class="aw-item-sub">
+              ${st?`<span class="aw-tag settled-tag">مسدّد</span>`:(d.paid>0?`<span class="aw-note">باقي ${fmt(r)}</span>`:"")}
+              ${(!st&&di&&di.kind!=="later")?`<span class="aw-tag ${di.cls}">${esc(di.label)}</span>`:""}
+              ${d.note?`<span class="aw-note">${esc(d.note)}</span>`:""}
+            </div>
+            <div class="aw-person-row-actions">
+              ${!st?`<button class="aw-pay" data-ppay="${d.id}">سدّد</button>`:""}
+              <button class="aw-del" data-pdel="${d.id}" aria-label="حذف">🗑</button>
+            </div>
+          </div>`; }).join("")}
+      </div>
+      <button class="aw-btn primary aw-person-add" id="personAdd">➕ دين جديد على ${esc(name)}</button>
+      <div class="aw-sheet-actions"><button class="aw-btn ghost" id="personClose">إغلاق</button></div>`;
+    body.querySelectorAll("[data-ppay]").forEach((b)=>b.onclick=()=>{ const d=state.debts.find((x)=>x.id===b.dataset.ppay); if(d) openPayModal(d, draw); });
+    body.querySelectorAll("[data-pdel]").forEach((b)=>b.onclick=()=>confirmDialog("حذف هذا الدَّين؟", ()=>{ state.debts=state.debts.filter((x)=>x.id!==b.dataset.pdel); save(); render(); draw(); }));
+    body.querySelector("#personAdd").onclick=()=> openDebtModal({name, type, cur:state.activeCur}, draw);
+    body.querySelector("#personClose").onclick=()=>{ m.close(); render(); };
+  }
+  draw();
 }
 
 /* ----- تبويب التقارير ----- */
@@ -674,6 +760,7 @@ function attachHandlers() {
   a.querySelectorAll("[data-editw]").forEach((b)=>b.onclick=()=>{ const w=state.wallets.find((x)=>x.id===b.dataset.editw); openWalletModal(w); });
   a.querySelectorAll("[data-deld]").forEach((b)=>b.onclick=()=>confirmDialog("حذف هذا الدَّين؟", ()=>{ state.debts=state.debts.filter((d)=>d.id!==b.dataset.deld); save(); render(); }));
   a.querySelectorAll("[data-pay]").forEach((b)=>b.onclick=()=>{ const d=state.debts.find((x)=>x.id===b.dataset.pay); openPayModal(d); });
+  a.querySelectorAll("[data-person]").forEach((b)=>b.onclick=()=>openPersonModal(b.dataset.person, b.dataset.ptype));
 
   a.querySelectorAll("[data-act]").forEach((b)=>b.onclick=(e)=>{
     const act=b.dataset.act;
@@ -866,19 +953,22 @@ function openWalletModal(wallet) {
 }
 
 /* --- دَين --- */
-function openDebtModal() {
-  let type="owed_to_me", cur=state.activeCur;
+function openDebtModal(prefill, onDone) {
+  let type=(prefill&&prefill.type)||"owed_to_me", cur=(prefill&&prefill.cur)||state.activeCur;
+  const pname=(prefill&&prefill.name)||"";
   const body = `
     <div class="aw-type-toggle">
-      <button class="aw-type-btn in on" data-dtype="owed_to_me">إلي عند حدا</button>
-      <button class="aw-type-btn out" data-dtype="i_owe">عليّ لحدا</button>
+      <button class="aw-type-btn in ${type==="owed_to_me"?"on":""}" data-dtype="owed_to_me">إلي عند حدا</button>
+      <button class="aw-type-btn out ${type==="i_owe"?"on":""}" data-dtype="i_owe">عليّ لحدا</button>
     </div>
     <label class="aw-field-label">الاسم</label>
-    <input class="aw-input" id="dName" type="text" placeholder="مين بدّو يردّلك؟" autofocus>
+    <input class="aw-input" id="dName" type="text" placeholder="${type==="owed_to_me"?"مين بدّو يردّلك؟":"لمين بدّك تردّ؟"}" value="${esc(pname)}" ${pname?"":"autofocus"}>
     <label class="aw-field-label">العملة</label>${curPickerHTML(cur,"d")}
     <label class="aw-field-label">المبلغ</label>
     <div class="aw-amount-wrap"><span class="aw-amount-cur" id="dCurSym">${esc(cur)}</span>
-      <input class="aw-amount-input" id="dAmount" type="number" inputmode="decimal" placeholder="0"></div>
+      <input class="aw-amount-input" id="dAmount" type="number" inputmode="decimal" placeholder="0" ${pname?"autofocus":""}></div>
+    <label class="aw-field-label" id="dWalletLabel">${type==="owed_to_me"?"من أي محفظة طلعت الفلوس؟ (اختياري)":"لأي محفظة دخلت الفلوس؟ (اختياري)"}</label>
+    <div class="aw-wallet-pick" id="dWallets"></div>
     <label class="aw-field-label">التاريخ</label>
     <input class="aw-input" id="dDate" type="date" value="${todayStr()}">
     <label class="aw-field-label">تاريخ الاستحقاق (اختياري — للتذكير)</label>
@@ -886,22 +976,38 @@ function openDebtModal() {
     <label class="aw-field-label">ملاحظة (اختياري)</label>
     <input class="aw-input" id="dNote" type="text" placeholder="مثلاً: سلفة، ثمن أدوية، أجار…">
     <div class="aw-sheet-actions"><button class="aw-btn ghost" id="dCancel">إلغاء</button><button class="aw-btn primary disabled" id="dSave">حفظ</button></div>`;
-  const m = modalShell("دَين جديد", body);
+  const m = modalShell(pname?("دَين جديد على "+esc(pname)):"دَين جديد", body);
   const s = m.sheet;
   const nameI=s.querySelector("#dName"), amtI=s.querySelector("#dAmount"), saveBtn=s.querySelector("#dSave");
+  let walletId="";
+  const walletsBox=s.querySelector("#dWallets"), walLabel=s.querySelector("#dWalletLabel");
+  function renderWallets(){ const wsx=state.wallets.filter((w)=>w.cur===cur);
+    walletsBox.innerHTML = wsx.map((w)=>`<button class="aw-wpick-btn ${walletId===w.id?"on":""}" data-w="${w.id}"><span>${walletIcon(w.name)}</span>${esc(w.name)}</button>`).join("")
+      + `<button class="aw-wpick-btn ${walletId===""?"on":""}" data-w="">بدون محفظة</button>`
+      + (wsx.length?"":`<div class="aw-mini-hint">ما في محافظ بعملة ${esc(cur)} — أضفها من تبويب «المحافظ».</div>`);
+    walletsBox.querySelectorAll("[data-w]").forEach((b)=>b.onclick=()=>{ walletId=b.dataset.w; renderWallets(); });
+  }
   function validate(){ const ok=parseFloat(amtI.value)>0 && nameI.value.trim(); saveBtn.classList.toggle("disabled",!ok); return ok; }
-  s.querySelectorAll("[data-dtype]").forEach((b)=>b.onclick=()=>{ type=b.dataset.dtype; s.querySelectorAll("[data-dtype]").forEach((x)=>x.classList.toggle("on", x.dataset.dtype===type)); nameI.placeholder = type==="owed_to_me"?"مين بدّو يردّلك؟":"لمين بدّك تردّ؟"; });
-  s.querySelector('[data-curpick="d"]').querySelectorAll("[data-cv]").forEach((b)=>b.onclick=()=>{ cur=b.dataset.cv; s.querySelectorAll('[data-curpick="d"] [data-cv]').forEach((x)=>x.classList.toggle("on", x.dataset.cv===cur)); s.querySelector("#dCurSym").textContent=cur; });
-  nameI.oninput=validate; amtI.oninput=validate;
+  s.querySelectorAll("[data-dtype]").forEach((b)=>b.onclick=()=>{ type=b.dataset.dtype; s.querySelectorAll("[data-dtype]").forEach((x)=>x.classList.toggle("on", x.dataset.dtype===type)); nameI.placeholder = type==="owed_to_me"?"مين بدّو يردّلك؟":"لمين بدّك تردّ؟"; walLabel.textContent = type==="owed_to_me"?"من أي محفظة طلعت الفلوس؟ (اختياري)":"لأي محفظة دخلت الفلوس؟ (اختياري)"; });
+  s.querySelector('[data-curpick="d"]').querySelectorAll("[data-cv]").forEach((b)=>b.onclick=()=>{ cur=b.dataset.cv; s.querySelectorAll('[data-curpick="d"] [data-cv]').forEach((x)=>x.classList.toggle("on", x.dataset.cv===cur)); s.querySelector("#dCurSym").textContent=cur; walletId=""; renderWallets(); });
+  nameI.oninput=validate; amtI.oninput=validate; validate(); renderWallets();
   s.querySelector("#dCancel").onclick=m.close;
   saveBtn.onclick=()=>{ if(!validate())return;
-    state.debts.push({ id:uid(), type, name:nameI.value.trim(), amount:parseFloat(amtI.value), paid:0, cur, date:s.querySelector("#dDate").value, dueDate:s.querySelector("#dDue").value||null, note:s.querySelector("#dNote").value.trim() });
-    state.activeCur=cur; save(); m.close(); render();
+    const amount=parseFloat(amtI.value);
+    const nm=nameI.value.trim();
+    state.debts.push({ id:uid(), type, name:nm, amount, paid:0, cur, date:s.querySelector("#dDate").value, dueDate:s.querySelector("#dDue").value||null, note:s.querySelector("#dNote").value.trim() });
+    if (walletId){
+      const mine = type==="owed_to_me"; // أعطيت فلوس => صادر ؛ أخذت فلوس => وارد
+      state.transactions.push({ id:uid(), type: mine?"expense":"income", amount, cur,
+        category: mine?"debt_lend":"debt_borrow", account:"personal", walletId,
+        date:s.querySelector("#dDate").value, note:(mine?"دين لـ ":"دين من ")+nm });
+    }
+    state.activeCur=cur; save(); m.close(); render(); if(onDone) onDone();
   };
 }
 
 /* --- تسديد دَين (مربوط بمحفظة) --- */
-function openPayModal(debt) {
+function openPayModal(debt, onDone) {
   const rem = Math.max(0, debt.amount-(debt.paid||0));
   const mine = debt.type==="owed_to_me";
   let walletId = "";
@@ -929,7 +1035,7 @@ function openPayModal(debt) {
         category: mine?"debt_collect":"debt_payment", account:"personal", walletId,
         date:todayStr(), note:(mine?"تحصيل من ":"تسديد لـ ")+debt.name });
     }
-    save(); m.close(); render();
+    save(); m.close(); render(); if(onDone) onDone();
   };
 }
 
@@ -951,8 +1057,10 @@ function openSettings() {
   s.querySelector("#setClose").onclick=m.close;
   const st = licStatus();
   const licBtn = s.querySelector("#licBtn");
-  licBtn.textContent = st.kind==="pro" ? `✅ النسخة الكاملة مفعّلة (${lic.name})` : st.kind==="trial" ? `🔑 تفعيل النسخة الكاملة — باقي ${st.days} يوم تجربة` : "🔑 تفعيل النسخة الكاملة";
-  if (st.kind==="pro") licBtn.disabled = true; else licBtn.onclick = ()=>{ m.close(); openSubscribe(); };
+  licBtn.textContent = st.kind==="pro"
+    ? (st.plan==="life" ? `✅ النسخة الكاملة مفعّلة (${lic.name})` : `✅ اشتراك ${PLAN_LABEL[st.plan]||""} — باقي ${st.days} يوم`)
+    : st.kind==="trial" ? `🔑 تفعيل النسخة الكاملة — باقي ${st.days} يوم تجربة` : "🔑 تفعيل النسخة الكاملة";
+  if (st.kind==="pro" && st.plan==="life") licBtn.disabled = true; else licBtn.onclick = ()=>{ m.close(); openSubscribe(); };
   s.querySelector("#editCats").onclick=()=>{ m.close(); openCatsModal(); };
   s.querySelector("#howInstall").onclick=()=>{ m.close(); openWelcome(); };
   const payB = s.querySelector("#payBtn"); if (payB) payB.onclick=()=>{ m.close(); openPayEditor(); };

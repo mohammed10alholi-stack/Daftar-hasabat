@@ -281,3 +281,27 @@ body{font-family:-apple-system,"SF Arabic","Segoe UI",system-ui,sans-serif;backg
 .aw-welcome-steps{margin:0;padding-inline-start:20px;font-size:14px;line-height:2.1;color:var(--ink);}
 .aw-welcome-steps b{color:var(--accent);}
 .aw-welcome-btn{width:100%;}
+
+/* صفحة الشخص (تجميع الديون) */
+.aw-chev{font-size:30px;color:var(--ink-soft);opacity:.7;padding:0 4px;}
+.aw-debt-item[data-person]{cursor:pointer;}
+.aw-person-sum{display:flex;align-items:center;justify-content:space-between;background:var(--card-soft);border-radius:14px;padding:14px 18px;font-size:15px;color:var(--ink-soft);margin-bottom:6px;}
+.aw-person-sum b{font-size:24px;font-variant-numeric:tabular-nums;}
+.aw-person-sum.in b{color:var(--income);}
+.aw-person-sum.out b{color:var(--expense);}
+.aw-person-list{margin:14px 0 6px;}
+.aw-person-row{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:12px 14px;margin-bottom:10px;}
+.aw-person-row.settled{opacity:.6;}
+.aw-person-row-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;}
+.aw-person-amt{font-size:18px;font-weight:800;font-variant-numeric:tabular-nums;}
+.aw-person-amt.in{color:var(--income);}
+.aw-person-amt.out{color:var(--expense);}
+.aw-person-row-actions{display:flex;gap:8px;margin-top:10px;}
+.aw-person-row-actions .aw-pay{flex:1;}
+.aw-person-add{width:100%;margin-top:6px;}
+
+/* شريط الاشتراك الفعّال */
+.aw-sub{ }
+.aw-sub.ok{background:linear-gradient(90deg,rgba(67,196,146,.16),rgba(67,196,146,.06));border:1px solid rgba(67,196,146,.35);}
+.aw-sub.warn{background:linear-gradient(90deg,rgba(212,168,74,.18),rgba(212,168,74,.06));border:1px solid rgba(212,168,74,.45);}
+.aw-sub-exp{font-size:12px;color:var(--ink-soft);opacity:.9;}
