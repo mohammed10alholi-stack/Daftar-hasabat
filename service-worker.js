@@ -1,5 +1,5 @@
 /* خدمة العمل أوفلاين — دفتر الحسابات */
-const CACHE = "daftar-v5";
+const CACHE = "daftar-v6";
 const ASSETS = [
   "./",
   "./index.html",
