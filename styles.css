@@ -305,3 +305,7 @@ body{font-family:-apple-system,"SF Arabic","Segoe UI",system-ui,sans-serif;backg
 .aw-sub.ok{background:linear-gradient(90deg,rgba(67,196,146,.16),rgba(67,196,146,.06));border:1px solid rgba(67,196,146,.35);}
 .aw-sub.warn{background:linear-gradient(90deg,rgba(212,168,74,.18),rgba(212,168,74,.06));border:1px solid rgba(212,168,74,.45);}
 .aw-sub-exp{font-size:12px;color:var(--ink-soft);opacity:.9;}
+
+/* شريط تفصيل الواردات (أخضر) */
+.aw-bar-fill.income-fill{background:linear-gradient(90deg,var(--income),#5fd6a8);}
+.aw-rep-amt.in{color:var(--income);}

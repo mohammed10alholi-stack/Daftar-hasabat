@@ -423,6 +423,11 @@ function accountsHTML() {
   const bd = Object.entries(bdMap).map(([id,amount])=>({id,amount})).sort((a,b)=>b.amount-a.amount);
   const bdMax = bd.length?bd[0].amount:0;
 
+  const inMap = {};
+  tx.filter((t)=>t.type==="income").forEach((t)=>inMap[t.category]=(inMap[t.category]||0)+t.amount);
+  const ibd = Object.entries(inMap).map(([id,amount])=>({id,amount})).sort((a,b)=>b.amount-a.amount);
+  const ibdMax = ibd.length?ibd[0].amount:0;
+
   let html = `<div class="aw-month-nav">
       <button class="aw-month-arrow" data-mon="-1" ${idx<=0?"disabled":""}>‹</button>
       <span class="aw-month-label">${monthLabel(state.viewMonth)}</span>
@@ -441,6 +446,16 @@ function accountsHTML() {
     <div class="aw-chips">
       ${[["all","الكل"],["work","الشغل"],["personal","شخصي"]].map(([id,l])=>`<button class="aw-chip ${state.accountFilter===id?"on":""}" data-accf="${id}">${l}</button>`).join("")}
     </div>`;
+
+  if (ibd.length) {
+    html += `<section class="aw-card"><div class="aw-card-title">من وين إجا الدخل</div>` +
+      ibd.map((row)=>{ const info=catInfo(row.id); const pct=income?Math.round((row.amount/income)*100):0; const w=ibdMax?Math.max(6,(row.amount/ibdMax)*100):0;
+        return `<div class="aw-bd-row"><div class="aw-bd-head">
+          <span class="aw-bd-name"><span class="aw-bd-icon">${info.icon}</span>${esc(info.label)}</span>
+          <span class="aw-bd-amt">${fmt(row.amount)} ${esc(state.activeCur)}<span class="aw-bd-pct">${pct}%</span></span>
+        </div><div class="aw-bar-track"><div class="aw-bar-fill income-fill" style="width:${w}%"></div></div></div>`;
+      }).join("") + `</section>`;
+  }
 
   if (bd.length) {
     html += `<section class="aw-card"><div class="aw-card-title">وين راحت المصاريف</div>` +
@@ -664,12 +679,14 @@ function computeReport(cur){
   const yinc=sumType(ytx,"income"), yexp=sumType(ytx,"expense");
   const map={}; mtx.filter((t)=>t.type==="expense").forEach((t)=>map[t.category]=(map[t.category]||0)+t.amount);
   const top=Object.entries(map).map(([id,a])=>({id,a})).sort((x,y)=>y.a-x.a).slice(0,3);
+  const imap={}; mtx.filter((t)=>t.type==="income").forEach((t)=>imap[t.category]=(imap[t.category]||0)+t.amount);
+  const itop=Object.entries(imap).map(([id,a])=>({id,a})).sort((x,y)=>y.a-x.a).slice(0,5);
   let cmp=null;
   if(!(exp===0&&pexp===0)){
     if(pexp===0) cmp={txt:"ما في بيانات للشهر السابق للمقارنة.",kind:"none"};
     else { const d=Math.round(((exp-pexp)/pexp)*100); cmp={pct:Math.abs(d),up:d>0,kind:d>0?"up":d<0?"down":"same"}; }
   }
-  return { mKey, pKey, year, inc, exp, net:inc-exp, pexp, yinc, yexp, ynet:yinc-yexp, top, cmp,
+  return { mKey, pKey, year, inc, exp, net:inc-exp, pexp, yinc, yexp, ynet:yinc-yexp, top, itop, cmp,
     monthName: AR_MONTHS[parseInt(mKey.split("-")[1],10)-1], prevName: AR_MONTHS[parseInt(pKey.split("-")[1],10)-1] };
 }
 
@@ -686,6 +703,8 @@ function reportsHTML(){
   }
   const topHTML = r.top.length ? r.top.map((row)=>{ const info=catInfo(row.id); const pct=r.exp?Math.round((row.a/r.exp)*100):0;
     return `<div class="aw-rep-row"><span>${info.icon} ${esc(info.label)}</span><span class="aw-rep-amt">${fmt(row.a)} ${esc(cur)} <span class="aw-bd-pct">${pct}%</span></span></div>`; }).join("") : `<span class="aw-note">ما في مصاريف هالشهر.</span>`;
+  const itopHTML = (r.itop&&r.itop.length) ? r.itop.map((row)=>{ const info=catInfo(row.id); const pct=r.inc?Math.round((row.a/r.inc)*100):0;
+    return `<div class="aw-rep-row"><span>${info.icon} ${esc(info.label)}</span><span class="aw-rep-amt in">${fmt(row.a)} ${esc(cur)} <span class="aw-bd-pct">${pct}%</span></span></div>`; }).join("") : `<span class="aw-note">ما في واردات هالشهر.</span>`;
 
   return `
     <section class="aw-card aw-rep-card">
@@ -697,6 +716,7 @@ function reportsHTML(){
       </div>
       ${cmpHTML}
     </section>
+    <section class="aw-card"><div class="aw-card-title">من وين إجا الدخل هالشهر</div>${itopHTML}</section>
     <section class="aw-card"><div class="aw-card-title">أكتر التصنيفات صرفاً هالشهر</div>${topHTML}</section>
     <section class="aw-card">
       <div class="aw-card-title">ملخص سنة ${esc(r.year)} — ${esc(cur)}</div>
@@ -713,6 +733,7 @@ function printReport(){
   const cur=state.activeCur, r=computeReport(cur);
   const line=(cap,val,cls)=>`<tr><td>${cap}</td><td class="${cls||''}">${fmt(val)} ${esc(cur)}</td></tr>`;
   const top=r.top.map((row)=>{const i=catInfo(row.id);const p=r.exp?Math.round((row.a/r.exp)*100):0;return `<tr><td>${i.icon} ${esc(i.label)}</td><td>${fmt(row.a)} ${esc(cur)} (${p}%)</td></tr>`;}).join("") || `<tr><td colspan="2">—</td></tr>`;
+  const itop=(r.itop&&r.itop.length?r.itop:[]).map((row)=>{const i=catInfo(row.id);const p=r.inc?Math.round((row.a/r.inc)*100):0;return `<tr><td>${i.icon} ${esc(i.label)}</td><td>${fmt(row.a)} ${esc(cur)} (${p}%)</td></tr>`;}).join("") || `<tr><td colspan="2">—</td></tr>`;
   let cmp="";
   if(r.cmp && r.cmp.kind!=="none" && r.cmp.kind!=="same") cmp=`<p class="pp-note">المقارنة مع ${esc(r.prevName)}: صرفت ${r.cmp.up?"أكثر":"أقل"} بنسبة ${r.cmp.pct}%.</p>`;
   const doc = `<div class="aw-print-doc">
@@ -720,6 +741,7 @@ function printReport(){
       <h2 class="pp-h">ملخص ${esc(r.monthName)} ${esc(r.mKey.slice(0,4))}</h2>
       <table class="pp-tbl">${line("وارد",r.inc,"pp-in")}${line("صادر",r.exp,"pp-out")}${line("الصافي",r.net,r.net<0?"pp-out":"pp-in")}</table>
       ${cmp}
+      <h2 class="pp-h">من وين إجا الدخل</h2><table class="pp-tbl">${itop}</table>
       <h2 class="pp-h">أكتر التصنيفات صرفاً</h2><table class="pp-tbl">${top}</table>
       <h2 class="pp-h">ملخص سنة ${esc(r.year)}</h2>
       <table class="pp-tbl">${line("وارد",r.yinc,"pp-in")}${line("صادر",r.yexp,"pp-out")}${line("الصافي",r.ynet,r.ynet<0?"pp-out":"pp-in")}</table>
