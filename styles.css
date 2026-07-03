@@ -309,3 +309,9 @@ body{font-family:-apple-system,"SF Arabic","Segoe UI",system-ui,sans-serif;backg
 /* شريط تفصيل الواردات (أخضر) */
 .aw-bar-fill.income-fill{background:linear-gradient(90deg,var(--income),#5fd6a8);}
 .aw-rep-amt.in{color:var(--income);}
+
+/* بنود قابلة للضغط */
+.aw-bd-tap{cursor:pointer;border-radius:12px;transition:background .15s;padding:6px;margin:-6px -6px 4px;}
+.aw-bd-tap:active{background:var(--card-soft);}
+.aw-bd-chev{color:var(--ink-soft);opacity:.6;margin-inline-start:6px;font-weight:700;}
+.aw-person-row-actions .aw-pay[data-cdedit]{background:var(--card-soft);color:var(--ink);border:1px solid var(--line);}

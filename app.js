@@ -413,7 +413,7 @@ function accountsHTML() {
   const idx = months.indexOf(state.viewMonth);
   const tx = curTx().filter((t)=>monthKeyOf(t.date)===state.viewMonth)
     .filter((t)=>state.accountFilter==="all"||t.account===state.accountFilter)
-    .sort((a,b)=>(a.date<b.date?1:a.date>b.date?-1:0));
+    .sort((a,b)=>(a.date<b.date?1:a.date>b.date?-1:(a.id<b.id?1:a.id>b.id?-1:0)));
   let income=0, expense=0;
   tx.forEach((t)=> t.type==="income"?(income+=t.amount):(expense+=t.amount));
   const balance = income-expense;
@@ -450,8 +450,8 @@ function accountsHTML() {
   if (ibd.length) {
     html += `<section class="aw-card"><div class="aw-card-title">من وين إجا الدخل</div>` +
       ibd.map((row)=>{ const info=catInfo(row.id); const pct=income?Math.round((row.amount/income)*100):0; const w=ibdMax?Math.max(6,(row.amount/ibdMax)*100):0;
-        return `<div class="aw-bd-row"><div class="aw-bd-head">
-          <span class="aw-bd-name"><span class="aw-bd-icon">${info.icon}</span>${esc(info.label)}</span>
+        return `<div class="aw-bd-row aw-bd-tap" data-catin="${esc(row.id)}"><div class="aw-bd-head">
+          <span class="aw-bd-name"><span class="aw-bd-icon">${info.icon}</span>${esc(info.label)}<span class="aw-bd-chev">›</span></span>
           <span class="aw-bd-amt">${fmt(row.amount)} ${esc(state.activeCur)}<span class="aw-bd-pct">${pct}%</span></span>
         </div><div class="aw-bar-track"><div class="aw-bar-fill income-fill" style="width:${w}%"></div></div></div>`;
       }).join("") + `</section>`;
@@ -460,8 +460,8 @@ function accountsHTML() {
   if (bd.length) {
     html += `<section class="aw-card"><div class="aw-card-title">وين راحت المصاريف</div>` +
       bd.map((row)=>{ const info=catInfo(row.id); const pct=expense?Math.round((row.amount/expense)*100):0; const w=bdMax?Math.max(6,(row.amount/bdMax)*100):0;
-        return `<div class="aw-bd-row"><div class="aw-bd-head">
-          <span class="aw-bd-name"><span class="aw-bd-icon">${info.icon}</span>${esc(info.label)}</span>
+        return `<div class="aw-bd-row aw-bd-tap" data-catout="${esc(row.id)}"><div class="aw-bd-head">
+          <span class="aw-bd-name"><span class="aw-bd-icon">${info.icon}</span>${esc(info.label)}<span class="aw-bd-chev">›</span></span>
           <span class="aw-bd-amt">${fmt(row.amount)} ${esc(state.activeCur)}<span class="aw-bd-pct">${pct}%</span></span>
         </div><div class="aw-bar-track"><div class="aw-bar-fill" style="width:${w}%"></div></div></div>`;
       }).join("") + `</section>`;
@@ -774,6 +774,8 @@ function attachHandlers() {
   a.querySelectorAll("[data-tab]").forEach((b)=>b.onclick=()=>{ state.tab=b.dataset.tab; render(); });
   a.querySelectorAll("[data-mon]").forEach((b)=>b.onclick=()=>{ const months=monthsList(); const i=months.indexOf(state.viewMonth)+parseInt(b.dataset.mon,10); if(i>=0&&i<months.length){state.viewMonth=months[i];render();} });
   a.querySelectorAll("[data-accf]").forEach((b)=>b.onclick=()=>{ state.accountFilter=b.dataset.accf; render(); });
+  a.querySelectorAll("[data-catin]").forEach((b)=>b.onclick=()=>openCatDetail("income", b.dataset.catin));
+  a.querySelectorAll("[data-catout]").forEach((b)=>b.onclick=()=>openCatDetail("expense", b.dataset.catout));
   a.querySelectorAll("[data-debtf]").forEach((b)=>b.onclick=()=>{ state.debtFilter=b.dataset.debtf; render(); });
   a.querySelectorAll("[data-deltx]").forEach((b)=>b.onclick=()=>confirmDialog("حذف هذه الحركة؟", ()=>{ invDel(b.dataset.deltx); state.transactions=state.transactions.filter((t)=>t.id!==b.dataset.deltx); save(); render(); }));
   a.querySelectorAll("[data-edittx]").forEach((b)=>b.onclick=()=>{ const t=state.transactions.find((x)=>x.id===b.dataset.edittx); if(t) openTxModal(t); });
@@ -838,6 +840,42 @@ function openInvoiceViewer(id){
     ov.querySelector("#invClose").onclick=()=>ov.remove();
     ov.onclick=(e)=>{ if(e.target===ov) ov.remove(); };
   });
+}
+
+function openCatDetail(type, catId){
+  const info = catInfo(catId);
+  const title = (type==="income"?"دخل: ":"صرف: ") + info.label;
+  const m = modalShell(`${info.icon} ${esc(title)}`, `<div id="catDetailBody"></div>`);
+  const body = m.sheet.querySelector("#catDetailBody");
+  const items = curTx()
+    .filter((t)=>monthKeyOf(t.date)===state.viewMonth && t.type===type && t.category===catId)
+    .sort((a,b)=>(a.date<b.date?1:a.date>b.date?-1:(a.id<b.id?1:a.id>b.id?-1:0)));
+  const total = items.reduce((s,t)=>s+t.amount,0);
+  const cls = type==="income"?"in":"out";
+  body.innerHTML = `
+    <div class="aw-person-sum ${cls}"><span>${monthLabel(state.viewMonth)} — ${items.length} حركة</span><b>${type==="income"?"+":"−"}${fmt(total)} ${esc(state.activeCur)}</b></div>
+    <div class="aw-person-list">
+      ${items.map((t)=>{ const wn=t.walletId?walletName(t.walletId):null;
+        return `<div class="aw-person-row">
+          <div class="aw-person-row-head">
+            <span class="aw-person-amt ${cls}">${type==="income"?"+":"−"}${fmt(t.amount)} ${esc(t.cur)}</span>
+            <span class="aw-date">${esc(t.date)}</span>
+          </div>
+          <div class="aw-item-sub">
+            <span class="aw-tag ${t.account==="work"?"work":"personal"}">${t.account==="work"?"شغل":"شخصي"}</span>
+            ${wn?`<span class="aw-tag">${esc(wn)}</span>`:""}
+            ${t.note?`<span class="aw-note">${esc(t.note)}</span>`:""}
+          </div>
+          <div class="aw-person-row-actions">
+            <button class="aw-pay" data-cdedit="${t.id}">تعديل</button>
+            <button class="aw-del" data-cddel="${t.id}" aria-label="حذف">🗑</button>
+          </div>
+        </div>`; }).join("")}
+    </div>
+    <div class="aw-sheet-actions"><button class="aw-btn ghost" id="cdClose">إغلاق</button></div>`;
+  body.querySelectorAll("[data-cdedit]").forEach((b)=>b.onclick=()=>{ const t=state.transactions.find((x)=>x.id===b.dataset.cdedit); if(t){ m.close(); openTxModal(t); } });
+  body.querySelectorAll("[data-cddel]").forEach((b)=>b.onclick=()=>confirmDialog("حذف هذه الحركة؟", async ()=>{ await invDel(b.dataset.cddel); state.transactions=state.transactions.filter((x)=>x.id!==b.dataset.cddel); save(); m.close(); render(); }));
+  body.querySelector("#cdClose").onclick=()=>{ m.close(); };
 }
 
 function openTxModal(editing) {
