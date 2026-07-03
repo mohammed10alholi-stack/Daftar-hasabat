@@ -1,12 +1,7 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
-<head>
-<meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1" />
-<title>دفتر الحسابات</title><meta name="color-scheme" content="light dark" />
-<meta name="theme-color" content="#0E1A17" media="(prefers-color-scheme: dark)" />
-<link rel="manifest" href="./manifest.webmanifest" />
-<meta name="apple-mobile-web-app-capable" content="yes" />
-<link rel="apple-touch-icon" href="./icon-180.png" />
+<head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>دفتر الحسابات</title><link rel="manifest" href="./manifest.webmanifest" />
 <style>
 :root{--bg:#F1F4F2;--surface:#FFFFFF;--ink:#16302B;--ink-soft:#5A6F69;--line:#E3E8E5;--income:#138A5E;--income-bg:#E4F4EC;--expense:#D2504A;--expense-bg:#FBE9E7;--gold:#C2922E;--blue:#2C5BB0;--blue-bg:#EAF0FB;--seg-bg:#E6EBE8;--remind-bg:#FFF8EC;--remind-line:#F0DDB0;--remind-line2:#F0E2C4;--card-soft:#F3F6F4;--track:#D2D8D4;--accent:#16302B;--on-accent:#FFFFFF;--gold-bg:#FBF6EA;--chip-soft:#EEF2F0;--purple:#7A4FB5;--purple-bg:#F3EEFB;color-scheme:light dark;}
 @media (prefers-color-scheme: dark){
@@ -325,8 +320,13 @@ body{font-family:-apple-system,"SF Arabic","Segoe UI",system-ui,sans-serif;backg
 .aw-bd-tap:active{background:var(--card-soft);}
 .aw-bd-chev{color:var(--ink-soft);opacity:.6;margin-inline-start:6px;font-weight:700;}
 .aw-person-row-actions .aw-pay[data-cdedit]{background:var(--card-soft);color:var(--ink);border:1px solid var(--line);}
+
+/* فلاتر النوع (وارد/صادر) */
+.aw-chips-type{margin-top:4px;}
+.aw-chip.chip-in.on{background:var(--income);color:#0E1A17;border-color:var(--income);}
+.aw-chip.chip-out.on{background:var(--expense);color:#fff;border-color:var(--expense);}
 </style></head><body>
-<div id="app" class="aw-root"><div class="aw-loading">جاري التحميل…</div></div>
+<div id="app" class="aw-root"></div>
 <script>
 /* ============================================================
    دفتر الحسابات — PWA كامل (Vanilla JS)
@@ -797,11 +797,16 @@ function accountsHTML() {
       }).join("") + `</section>`;
   }
 
-  html += `<section class="aw-list"><div class="aw-list-head"><span>الحركات</span><span class="aw-list-count">${tx.length}</span></div>`;
-  if (!tx.length) {
-    html += `<div class="aw-empty">ما في حركات بعملة ${esc(state.activeCur)} هذا الشهر.<br>اضغط <b>+</b> تحت لتسجّل أول وارد أو صادر.</div>`;
+  const typeFilter = state.typeFilter || "all";
+  const listTx = tx.filter((t)=> typeFilter==="all" || t.type===typeFilter);
+  html += `<div class="aw-chips aw-chips-type">
+      ${[["all","الكل"],["income","وارد"],["expense","صادر"]].map(([id,l])=>`<button class="aw-chip ${typeFilter===id?"on":""} ${id!=="all"?(id==="income"?"chip-in":"chip-out"):""}" data-typef="${id}">${l}</button>`).join("")}
+    </div>`;
+  html += `<section class="aw-list"><div class="aw-list-head"><span>${typeFilter==="income"?"الواردات":typeFilter==="expense"?"الصادرات":"الحركات"}</span><span class="aw-list-count">${listTx.length}</span></div>`;
+  if (!listTx.length) {
+    html += `<div class="aw-empty">ما في ${typeFilter==="income"?"واردات":typeFilter==="expense"?"صادرات":"حركات"} بعملة ${esc(state.activeCur)} هذا الشهر.<br>اضغط <b>+</b> تحت لتسجّل حركة.</div>`;
   } else {
-    html += tx.map((t)=>{ const info=catInfo(t.category); const wn=t.walletId?walletName(t.walletId):null;
+    html += listTx.map((t)=>{ const info=catInfo(t.category); const wn=t.walletId?walletName(t.walletId):null;
       return `<div class="aw-item">
         <div class="aw-item-icon ${t.type==="income"?"in":"out"}">${info.icon}</div>
         <div class="aw-item-body">
@@ -1104,6 +1109,7 @@ function attachHandlers() {
   a.querySelectorAll("[data-tab]").forEach((b)=>b.onclick=()=>{ state.tab=b.dataset.tab; render(); });
   a.querySelectorAll("[data-mon]").forEach((b)=>b.onclick=()=>{ const months=monthsList(); const i=months.indexOf(state.viewMonth)+parseInt(b.dataset.mon,10); if(i>=0&&i<months.length){state.viewMonth=months[i];render();} });
   a.querySelectorAll("[data-accf]").forEach((b)=>b.onclick=()=>{ state.accountFilter=b.dataset.accf; render(); });
+  a.querySelectorAll("[data-typef]").forEach((b)=>b.onclick=()=>{ state.typeFilter=b.dataset.typef; render(); });
   a.querySelectorAll("[data-catin]").forEach((b)=>b.onclick=()=>openCatDetail("income", b.dataset.catin));
   a.querySelectorAll("[data-catout]").forEach((b)=>b.onclick=()=>openCatDetail("expense", b.dataset.catout));
   a.querySelectorAll("[data-debtf]").forEach((b)=>b.onclick=()=>{ state.debtFilter=b.dataset.debtf; render(); });

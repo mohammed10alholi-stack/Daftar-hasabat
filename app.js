@@ -467,11 +467,16 @@ function accountsHTML() {
       }).join("") + `</section>`;
   }
 
-  html += `<section class="aw-list"><div class="aw-list-head"><span>الحركات</span><span class="aw-list-count">${tx.length}</span></div>`;
-  if (!tx.length) {
-    html += `<div class="aw-empty">ما في حركات بعملة ${esc(state.activeCur)} هذا الشهر.<br>اضغط <b>+</b> تحت لتسجّل أول وارد أو صادر.</div>`;
+  const typeFilter = state.typeFilter || "all";
+  const listTx = tx.filter((t)=> typeFilter==="all" || t.type===typeFilter);
+  html += `<div class="aw-chips aw-chips-type">
+      ${[["all","الكل"],["income","وارد"],["expense","صادر"]].map(([id,l])=>`<button class="aw-chip ${typeFilter===id?"on":""} ${id!=="all"?(id==="income"?"chip-in":"chip-out"):""}" data-typef="${id}">${l}</button>`).join("")}
+    </div>`;
+  html += `<section class="aw-list"><div class="aw-list-head"><span>${typeFilter==="income"?"الواردات":typeFilter==="expense"?"الصادرات":"الحركات"}</span><span class="aw-list-count">${listTx.length}</span></div>`;
+  if (!listTx.length) {
+    html += `<div class="aw-empty">ما في ${typeFilter==="income"?"واردات":typeFilter==="expense"?"صادرات":"حركات"} بعملة ${esc(state.activeCur)} هذا الشهر.<br>اضغط <b>+</b> تحت لتسجّل حركة.</div>`;
   } else {
-    html += tx.map((t)=>{ const info=catInfo(t.category); const wn=t.walletId?walletName(t.walletId):null;
+    html += listTx.map((t)=>{ const info=catInfo(t.category); const wn=t.walletId?walletName(t.walletId):null;
       return `<div class="aw-item">
         <div class="aw-item-icon ${t.type==="income"?"in":"out"}">${info.icon}</div>
         <div class="aw-item-body">
@@ -774,6 +779,7 @@ function attachHandlers() {
   a.querySelectorAll("[data-tab]").forEach((b)=>b.onclick=()=>{ state.tab=b.dataset.tab; render(); });
   a.querySelectorAll("[data-mon]").forEach((b)=>b.onclick=()=>{ const months=monthsList(); const i=months.indexOf(state.viewMonth)+parseInt(b.dataset.mon,10); if(i>=0&&i<months.length){state.viewMonth=months[i];render();} });
   a.querySelectorAll("[data-accf]").forEach((b)=>b.onclick=()=>{ state.accountFilter=b.dataset.accf; render(); });
+  a.querySelectorAll("[data-typef]").forEach((b)=>b.onclick=()=>{ state.typeFilter=b.dataset.typef; render(); });
   a.querySelectorAll("[data-catin]").forEach((b)=>b.onclick=()=>openCatDetail("income", b.dataset.catin));
   a.querySelectorAll("[data-catout]").forEach((b)=>b.onclick=()=>openCatDetail("expense", b.dataset.catout));
   a.querySelectorAll("[data-debtf]").forEach((b)=>b.onclick=()=>{ state.debtFilter=b.dataset.debtf; render(); });

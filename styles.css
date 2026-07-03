@@ -315,3 +315,8 @@ body{font-family:-apple-system,"SF Arabic","Segoe UI",system-ui,sans-serif;backg
 .aw-bd-tap:active{background:var(--card-soft);}
 .aw-bd-chev{color:var(--ink-soft);opacity:.6;margin-inline-start:6px;font-weight:700;}
 .aw-person-row-actions .aw-pay[data-cdedit]{background:var(--card-soft);color:var(--ink);border:1px solid var(--line);}
+
+/* فلاتر النوع (وارد/صادر) */
+.aw-chips-type{margin-top:4px;}
+.aw-chip.chip-in.on{background:var(--income);color:#0E1A17;border-color:var(--income);}
+.aw-chip.chip-out.on{background:var(--expense);color:#fff;border-color:var(--expense);}
