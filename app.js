@@ -309,6 +309,36 @@ function openWelcome(){
 }
 function maybeWelcome(){ try{ if(localStorage.getItem(WELCOME_KEY)) return; }catch(e){} openWelcome(); }
 
+function openFAQ(){
+  const waNum = (typeof PAY!=="undefined" && PAY.whatsapp) ? PAY.whatsapp : "970597210118";
+  const items = [
+    ["كيف أسجّل حركة (وارد أو صادر)؟","اضغط زر ➕ تحت، اختر «وارد» أو «صادر»، حط المبلغ والتصنيف، واختر المحفظة إن حبيت، بعدها اضغط حفظ."],
+    ["كيف أعدّل أو أحذف حركة؟","بقائمة الحركات، اضغط ✏️ لتعديل الحركة، أو 🗑 لحذفها."],
+    ["كيف بتشتغل المحافظ؟","كل محفظة إلها رصيد أساسي، وبيتحدّث تلقائياً مع كل حركة مربوطة فيها. تقدر تضيف بنك، كاش، جوال بي، وغيرها من تبويب «المحافظ»."],
+    ["كيف أغيّر اسم محفظة؟","بتبويب «المحافظ»، اضغط على المحفظة، عدّل الاسم، واضغط حفظ."],
+    ["كيف بتشتغل الديون؟","بتبويب «الديون»، كل شخص بيطلع بسطر واحد فيه مجموع دينه. اضغط على اسمه لتشوف كل ديونه، تسدّد، أو تضيف دين جديد عليه."],
+    ["لما أعطي حدا دين، بينقص من محفظتي؟","إي، لو اخترت المحفظة وقت تسجيل الدين، بينخصم منها. ولما الشخص يسدّدك، بترجع تزيد."],
+    ["كيف أطلّع تقرير PDF؟","من تبويب «تقارير»، اضغط «تصدير / طباعة PDF»، وبيطلعلك تقرير جاهز باسمك."],
+    ["كيف آخد نسخة احتياطية؟","من ⚙️ الإعدادات → «نسخة احتياطية كاملة (JSON)». احفظ الملف بمكان آمن. لو غيّرت جهازك أو حذفت التطبيق، ترجّعها من «استرجاع نسخة احتياطية»."],
+    ["نسيت آخذ نسخة احتياطية وحذفت التطبيق، بترجع بياناتي؟","للأسف لأ — البيانات محفوظة على جهازك فقط. عشان هيك خذ نسخة احتياطية بشكل دوري."],
+    ["التطبيق بيشتغل بدون إنترنت؟","إي، بعد ما تثبّته بيشتغل كامل أوفلاين."],
+    ["كيف أفعّل النسخة الكاملة؟","من شاشة التفعيل خذ «رمز جهازك»، أرسله لنا على واتساب، وبيوصلك كود التفعيل. أدخله بشاشة التفعيل."],
+    ["اشتراكي خلص، شو أعمل؟","بيظهرلك زر «جدّد». أرسل لنا رمز جهازك على واتساب، وبيوصلك كود تجديد جديد."]
+  ];
+  const body = `<div class="aw-faq">
+    ${items.map(([q,ans],i)=>`<div class="aw-faq-item" data-faq="${i}">
+      <button class="aw-faq-q" data-faqq="${i}"><span>${esc(q)}</span><span class="aw-faq-ar">﹀</span></button>
+      <div class="aw-faq-a" id="faqa-${i}">${esc(ans)}</div>
+    </div>`).join("")}
+    <a class="aw-btn primary aw-faq-wa" href="https://wa.me/${esc((waNum||"").replace(/[^0-9]/g,"").replace(/^0/,"970"))}" target="_blank" rel="noopener">لسا محتاج مساعدة؟ راسلنا واتساب</a>
+    <div class="aw-sheet-actions"><button class="aw-btn ghost" id="faqClose">إغلاق</button></div>
+  </div>`;
+  const m = modalShell("❓ الأسئلة الشائعة", body);
+  const s = m.sheet;
+  s.querySelectorAll("[data-faqq]").forEach((b)=>b.onclick=()=>{ const it=s.querySelector(`.aw-faq-item[data-faq="${b.dataset.faqq}"]`); it.classList.toggle("open"); });
+  s.querySelector("#faqClose").onclick=m.close;
+}
+
 function trialBannerHTML(days){
   return `<div class="aw-trial"><span>النسخة التجريبية — باقي <b>${days}</b> يوم</span><button class="aw-trial-btn" data-act="subscribe">اشترك</button></div>`;
 }
@@ -396,6 +426,7 @@ function tabsHTML() {
     <button class="aw-seg-btn ${state.tab==="accounts"?"on":""}" data-tab="accounts">الحركات</button>
     <button class="aw-seg-btn ${state.tab==="wallets"?"on":""}" data-tab="wallets">المحافظ</button>
     <button class="aw-seg-btn ${state.tab==="debts"?"on":""}" data-tab="debts">الديون${dc?`<span class="aw-dot">${dc}</span>`:""}</button>
+    <button class="aw-seg-btn ${state.tab==="salaries"?"on":""}" data-tab="salaries">الرواتب</button>
     <button class="aw-seg-btn ${state.tab==="reports"?"on":""}" data-tab="reports">تقارير</button>
   </div>`;
 }
@@ -403,6 +434,7 @@ function tabContentHTML() {
   if (state.tab==="accounts") return accountsHTML();
   if (state.tab==="wallets") return walletsHTML();
   if (state.tab==="reports") return reportsHTML();
+  if (state.tab==="salaries") return salariesHTML();
   return debtsHTML();
 }
 function fabHTML(){ return state.tab==="reports" ? "" : `<button class="aw-fab" data-act="add" aria-label="إضافة">+</button>`; }
@@ -791,10 +823,12 @@ function attachHandlers() {
   a.querySelectorAll("[data-deld]").forEach((b)=>b.onclick=()=>confirmDialog("حذف هذا الدَّين؟", ()=>{ state.debts=state.debts.filter((d)=>d.id!==b.dataset.deld); save(); render(); }));
   a.querySelectorAll("[data-pay]").forEach((b)=>b.onclick=()=>{ const d=state.debts.find((x)=>x.id===b.dataset.pay); openPayModal(d); });
   a.querySelectorAll("[data-person]").forEach((b)=>b.onclick=()=>openPersonModal(b.dataset.person, b.dataset.ptype));
+  a.querySelectorAll("[data-paysal]").forEach((b)=>b.onclick=(e)=>{ e.stopPropagation(); const emp=(state.employees||[]).find((x)=>x.id===b.dataset.paysal); if(emp) openSalaryModal(emp); });
+  a.querySelectorAll("[data-emp]").forEach((b)=>b.onclick=()=>{ const emp=(state.employees||[]).find((x)=>x.id===b.dataset.emp); if(emp) openEmployeeModal(emp); });
 
   a.querySelectorAll("[data-act]").forEach((b)=>b.onclick=(e)=>{
     const act=b.dataset.act;
-    if (act==="add") { if(state.tab==="accounts")openTxModal(); else if(state.tab==="wallets")openWalletModal(null); else openDebtModal(); }
+    if (act==="add") { if(state.tab==="accounts")openTxModal(); else if(state.tab==="wallets")openWalletModal(null); else if(state.tab==="salaries")openEmployeeModal(); else openDebtModal(); }
     else if (act==="settings") openSettings();
     else if (act==="activate") openActivate();
     else if (act==="subscribe") openSubscribe();
@@ -846,6 +880,96 @@ function openInvoiceViewer(id){
     ov.querySelector("#invClose").onclick=()=>ov.remove();
     ov.onclick=(e)=>{ if(e.target===ov) ov.remove(); };
   });
+}
+
+function salariesHTML(){
+  const cur = state.activeCur;
+  const emps = (state.employees||[]);
+  const monthTx = curTx().filter((t)=>t.type==="expense" && t.category==="salary" && monthKeyOf(t.date)===state.viewMonth);
+  const monthTotal = monthTx.reduce((s,t)=>s+t.amount,0);
+
+  let html = `<section class="aw-ledger aw-ledger-debt">
+      <div class="aw-ledger-label">رواتب هذا الشهر — ${esc(cur)}</div>
+      <div class="aw-balance neg"><span class="aw-cur-sym">${esc(cur)}</span><span class="aw-balance-num">${fmt(monthTotal)}</span></div>
+    </section>
+    <section class="aw-list"><div class="aw-list-head"><span>الموظفين</span><span class="aw-list-count">${emps.length}</span></div>`;
+
+  if (!emps.length){
+    html += `<div class="aw-empty">ما في موظفين بعد.<br>اضغط <b>+</b> تحت لإضافة موظف.</div>`;
+  } else {
+    html += emps.map((e)=>{ const paid = monthTx.filter((t)=>t.emp===e.id).reduce((s,t)=>s+t.amount,0);
+      const all = curTx().filter((t)=>t.type==="expense"&&t.category==="salary"&&t.emp===e.id).sort((a,b)=>a.date<b.date?1:-1);
+      const last = all[0];
+      return `<div class="aw-item aw-emp-item" data-emp="${e.id}">
+        <div class="aw-item-icon">👤</div>
+        <div class="aw-item-body">
+          <div class="aw-item-top"><span class="aw-item-cat">${esc(e.name)}</span>
+            <span class="aw-item-amt ${paid>0?"out":""}">${paid>0?fmt(paid)+" "+esc(cur):"—"}</span></div>
+          <div class="aw-item-sub">
+            ${paid>0?`<span class="aw-tag work">استلم هالشهر</span>`:`<span class="aw-tag">ما استلم بعد</span>`}
+            ${last?`<span class="aw-note">آخر صرف: ${esc(last.date)}</span>`:""}
+          </div>
+        </div>
+        <div class="aw-debt-actions"><button class="aw-pay" data-paysal="${e.id}">صرف راتب</button></div>
+      </div>`;
+    }).join("");
+  }
+  html += `</section>`;
+  return html;
+}
+
+function openEmployeeModal(emp){
+  const ed = emp && emp.id ? emp : null;
+  const body = `
+    <label class="aw-field-label">اسم الموظف</label>
+    <input class="aw-input" id="empName" type="text" placeholder="مثلاً: أحمد" value="${ed?esc(ed.name):""}" autofocus>
+    <div class="aw-sheet-actions">
+      ${ed?`<button class="aw-btn danger" id="empDel">حذف</button>`:`<button class="aw-btn ghost" id="empCancel">إلغاء</button>`}
+      <button class="aw-btn primary" id="empSave">حفظ</button>
+    </div>`;
+  const m = modalShell(ed?"تعديل موظف":"موظف جديد", body);
+  const s = m.sheet;
+  s.querySelector("#empSave").onclick=()=>{ const nm=s.querySelector("#empName").value.trim(); if(!nm)return;
+    if(!state.employees) state.employees=[];
+    if(ed){ const i=state.employees.findIndex((x)=>x.id===ed.id); if(i>=0) state.employees[i].name=nm; }
+    else state.employees.push({id:uid(), name:nm});
+    save(); m.close(); render();
+  };
+  if(ed){ s.querySelector("#empDel").onclick=()=>confirmDialog("حذف هذا الموظف؟ (سجل رواتبه بيظل بالحركات)", ()=>{ state.employees=state.employees.filter((x)=>x.id!==ed.id); save(); m.close(); render(); }); }
+  else s.querySelector("#empCancel").onclick=m.close;
+}
+
+function openSalaryModal(emp){
+  let cur=state.activeCur, walletId="";
+  const body = `
+    <label class="aw-field-label">العملة</label>${curPickerHTML(cur,"sal")}
+    <label class="aw-field-label">مبلغ الراتب</label>
+    <div class="aw-amount-wrap"><span class="aw-amount-cur" id="salCurSym">${esc(cur)}</span>
+      <input class="aw-amount-input" id="salAmount" type="number" inputmode="decimal" placeholder="0" autofocus></div>
+    <label class="aw-field-label">من أي محفظة طلع الراتب؟ (اختياري)</label>
+    <div class="aw-wallet-pick" id="salWallets"></div>
+    <label class="aw-field-label">التاريخ</label>
+    <input class="aw-input" id="salDate" type="date" value="${todayStr()}">
+    <label class="aw-field-label">ملاحظة (اختياري)</label>
+    <input class="aw-input" id="salNote" type="text" placeholder="مثلاً: راتب شهر 6">
+    <div class="aw-sheet-actions"><button class="aw-btn ghost" id="salCancel">إلغاء</button><button class="aw-btn primary" id="salSave">صرف الراتب</button></div>`;
+  const m = modalShell("صرف راتب — "+esc(emp.name), body);
+  const s = m.sheet;
+  const walletsBox=s.querySelector("#salWallets");
+  function renderWallets(){ const wsx=state.wallets.filter((w)=>w.cur===cur);
+    walletsBox.innerHTML = wsx.map((w)=>`<button class="aw-wpick-btn ${walletId===w.id?"on":""}" data-w="${w.id}"><span>${walletIcon(w.name)}</span>${esc(w.name)}</button>`).join("")
+      + `<button class="aw-wpick-btn ${walletId===""?"on":""}" data-w="">بدون محفظة</button>`
+      + (wsx.length?"":`<div class="aw-mini-hint">ما في محافظ بعملة ${esc(cur)}.</div>`);
+    walletsBox.querySelectorAll("[data-w]").forEach((b)=>b.onclick=()=>{ walletId=b.dataset.w; renderWallets(); });
+  }
+  s.querySelector('[data-curpick="sal"]').querySelectorAll("[data-cv]").forEach((b)=>b.onclick=()=>{ cur=b.dataset.cv; s.querySelectorAll('[data-curpick="sal"] [data-cv]').forEach((x)=>x.classList.toggle("on", x.dataset.cv===cur)); s.querySelector("#salCurSym").textContent=cur; walletId=""; renderWallets(); });
+  renderWallets();
+  s.querySelector("#salCancel").onclick=m.close;
+  s.querySelector("#salSave").onclick=()=>{ const amt=parseFloat(s.querySelector("#salAmount").value); if(!(amt>0))return;
+    state.transactions.push({ id:uid(), type:"expense", amount:amt, cur, category:"salary", emp:emp.id, account:"work",
+      walletId:walletId||null, date:s.querySelector("#salDate").value, note:s.querySelector("#salNote").value.trim()||("راتب "+emp.name) });
+    state.activeCur=cur; save(); m.close(); render();
+  };
 }
 
 function openCatDetail(type, catId){
@@ -1112,6 +1236,7 @@ function openSettings() {
     <button class="aw-set-btn" id="licBtn"></button>
     <button class="aw-set-btn" id="editCats">🏷️ تعديل التصنيفات</button>
     <button class="aw-set-btn" id="howInstall">📲 كيف أثبّت التطبيق؟</button>
+    <button class="aw-set-btn" id="faqBtn">❓ الأسئلة الشائعة</button>
     ${isOwner()?`<button class="aw-set-btn" id="payBtn">💳 إعدادات الدفع</button>`:""}
     <button class="aw-set-btn" id="expCsv">📊 تصدير الحركات (CSV / Excel)</button>
     <button class="aw-set-btn" id="expJson">💾 نسخة احتياطية كاملة (JSON)</button>
@@ -1129,6 +1254,7 @@ function openSettings() {
   if (st.kind==="pro" && st.plan==="life") licBtn.disabled = true; else licBtn.onclick = ()=>{ m.close(); openSubscribe(); };
   s.querySelector("#editCats").onclick=()=>{ m.close(); openCatsModal(); };
   s.querySelector("#howInstall").onclick=()=>{ m.close(); openWelcome(); };
+  s.querySelector("#faqBtn").onclick=()=>{ m.close(); openFAQ(); };
   const payB = s.querySelector("#payBtn"); if (payB) payB.onclick=()=>{ m.close(); openPayEditor(); };
   s.querySelector("#expCsv").onclick=exportCSV;
   s.querySelector("#expJson").onclick=exportJSON;
