@@ -212,6 +212,7 @@ function load() {
       state.wallets = (s.wallets||[]).map((w)=>({...w, cur:w.cur||oldCur, opening: w.opening!==undefined?w.opening:(Number(w.balance)||0)}));
       state.activeCur = s.activeCur || oldCur;
       if (s.cats && Array.isArray(s.cats.income) && Array.isArray(s.cats.expense)) state.cats = s.cats;
+      if (Array.isArray(s.employees)) state.employees = s.employees;
     }
   } catch (e) { /* وضع المعاينة بدون تخزين */ }
   if (!state.cats) state.cats = {
@@ -224,6 +225,7 @@ function save() {
     localStorage.setItem(STORE_KEY, JSON.stringify({
       transactions: state.transactions, debts: state.debts,
       wallets: state.wallets, cats: state.cats, activeCur: state.activeCur,
+      employees: state.employees||[],
     }));
   } catch (e) {}
 }
@@ -500,13 +502,26 @@ function accountsHTML() {
   }
 
   const typeFilter = state.typeFilter || "all";
-  const listTx = tx.filter((t)=> typeFilter==="all" || t.type===typeFilter);
+  const walletFilter = state.walletFilter || "all";
+  const curWallets = state.wallets.filter((wl)=>wl.cur===state.activeCur);
+  const listTx = tx.filter((t)=> typeFilter==="all" || t.type===typeFilter)
+    .filter((t)=> walletFilter==="all" || t.walletId===walletFilter || (walletFilter==="none" && !t.walletId));
   html += `<div class="aw-chips aw-chips-type">
       ${[["all","الكل"],["income","وارد"],["expense","صادر"]].map(([id,l])=>`<button class="aw-chip ${typeFilter===id?"on":""} ${id!=="all"?(id==="income"?"chip-in":"chip-out"):""}" data-typef="${id}">${l}</button>`).join("")}
     </div>`;
-  html += `<section class="aw-list"><div class="aw-list-head"><span>${typeFilter==="income"?"الواردات":typeFilter==="expense"?"الصادرات":"الحركات"}</span><span class="aw-list-count">${listTx.length}</span></div>`;
+  if (curWallets.length) {
+    html += `<div class="aw-chips aw-chips-wallet">
+      <button class="aw-chip ${walletFilter==="all"?"on":""}" data-walf="all">كل المحافظ</button>
+      ${curWallets.map((wl)=>`<button class="aw-chip ${walletFilter===wl.id?"on":""}" data-walf="${wl.id}">${walletIcon(wl.name)} ${esc(wl.name)}</button>`).join("")}
+      <button class="aw-chip ${walletFilter==="none"?"on":""}" data-walf="none">بدون محفظة</button>
+    </div>`;
+  }
+  const listTitle = walletFilter!=="all" && walletFilter!=="none"
+    ? (walletName(walletFilter)||"المحفظة")
+    : (typeFilter==="income"?"الواردات":typeFilter==="expense"?"الصادرات":"الحركات");
+  html += `<section class="aw-list"><div class="aw-list-head"><span>${esc(listTitle)}</span><span class="aw-list-count">${listTx.length}</span></div>`;
   if (!listTx.length) {
-    html += `<div class="aw-empty">ما في ${typeFilter==="income"?"واردات":typeFilter==="expense"?"صادرات":"حركات"} بعملة ${esc(state.activeCur)} هذا الشهر.<br>اضغط <b>+</b> تحت لتسجّل حركة.</div>`;
+    html += `<div class="aw-empty">ما في حركات بهالفلتر هذا الشهر.<br>اضغط <b>+</b> تحت لتسجّل حركة.</div>`;
   } else {
     html += listTx.map((t)=>{ const info=catInfo(t.category); const wn=t.walletId?walletName(t.walletId):null;
       return `<div class="aw-item">
@@ -574,13 +589,14 @@ function walletsHTML() {
     html += `<div class="aw-empty">ما في محافظ بعملة ${esc(state.activeCur)} بعد.<br>اضغط <b>+</b> تحت لتضيف بنك فلسطين، المحفظة، إلخ.</div>`;
   } else {
     html += ws.map((w)=>{ const cur=walletCurrent(w,deltas); const dl=deltas[w.id]||0;
-      return `<div class="aw-item aw-wallet-item" data-editw="${w.id}">
-        <div class="aw-item-icon wallet">${walletIcon(w.name)}</div>
-        <div class="aw-item-body">
+      return `<div class="aw-item aw-wallet-item">
+        <div class="aw-item-icon wallet" data-wdetail="${w.id}">${walletIcon(w.name)}</div>
+        <div class="aw-item-body" data-wdetail="${w.id}">
           <div class="aw-item-top"><span class="aw-item-cat">${esc(w.name)}</span>
             <span class="aw-wallet-bal ${cur<0?"neg":""}">${fmt(cur)} ${esc(w.cur)}</span></div>
-          <div class="aw-item-sub">${dl!==0?`<span class="aw-note">الأساسي ${fmt(Number(w.opening)||0)} • الحركات ${dl>0?"+":"−"}${fmt(Math.abs(dl))}</span>`:`<span class="aw-note">اضغط للتعديل</span>`}</div>
+          <div class="aw-item-sub">${dl!==0?`<span class="aw-note">الأساسي ${fmt(Number(w.opening)||0)} • الحركات ${dl>0?"+":"−"}${fmt(Math.abs(dl))}</span>`:`<span class="aw-note">اضغط لعرض الحركات</span>`}</div>
         </div>
+        <button class="aw-edit" data-editw="${w.id}" aria-label="تعديل">✏️</button>
         <button class="aw-del" data-delw="${w.id}" aria-label="حذف">🗑</button>
       </div>`;
     }).join("");
@@ -812,6 +828,7 @@ function attachHandlers() {
   a.querySelectorAll("[data-mon]").forEach((b)=>b.onclick=()=>{ const months=monthsList(); const i=months.indexOf(state.viewMonth)+parseInt(b.dataset.mon,10); if(i>=0&&i<months.length){state.viewMonth=months[i];render();} });
   a.querySelectorAll("[data-accf]").forEach((b)=>b.onclick=()=>{ state.accountFilter=b.dataset.accf; render(); });
   a.querySelectorAll("[data-typef]").forEach((b)=>b.onclick=()=>{ state.typeFilter=b.dataset.typef; render(); });
+  a.querySelectorAll("[data-walf]").forEach((b)=>b.onclick=()=>{ state.walletFilter=b.dataset.walf; render(); });
   a.querySelectorAll("[data-catin]").forEach((b)=>b.onclick=()=>openCatDetail("income", b.dataset.catin));
   a.querySelectorAll("[data-catout]").forEach((b)=>b.onclick=()=>openCatDetail("expense", b.dataset.catout));
   a.querySelectorAll("[data-debtf]").forEach((b)=>b.onclick=()=>{ state.debtFilter=b.dataset.debtf; render(); });
@@ -819,7 +836,8 @@ function attachHandlers() {
   a.querySelectorAll("[data-edittx]").forEach((b)=>b.onclick=()=>{ const t=state.transactions.find((x)=>x.id===b.dataset.edittx); if(t) openTxModal(t); });
   a.querySelectorAll("[data-inv]").forEach((b)=>b.onclick=()=>openInvoiceViewer(b.dataset.inv));
   a.querySelectorAll("[data-delw]").forEach((b)=>b.onclick=(e)=>{ e.stopPropagation(); confirmDialog("حذف هذه المحفظة؟", ()=>{ state.wallets=state.wallets.filter((w)=>w.id!==b.dataset.delw); save(); render(); }); });
-  a.querySelectorAll("[data-editw]").forEach((b)=>b.onclick=()=>{ const w=state.wallets.find((x)=>x.id===b.dataset.editw); openWalletModal(w); });
+  a.querySelectorAll("[data-editw]").forEach((b)=>b.onclick=(e)=>{ e.stopPropagation(); const w=state.wallets.find((x)=>x.id===b.dataset.editw); openWalletModal(w); });
+  a.querySelectorAll("[data-wdetail]").forEach((b)=>b.onclick=()=>openWalletDetail(b.dataset.wdetail));
   a.querySelectorAll("[data-deld]").forEach((b)=>b.onclick=()=>confirmDialog("حذف هذا الدَّين؟", ()=>{ state.debts=state.debts.filter((d)=>d.id!==b.dataset.deld); save(); render(); }));
   a.querySelectorAll("[data-pay]").forEach((b)=>b.onclick=()=>{ const d=state.debts.find((x)=>x.id===b.dataset.pay); openPayModal(d); });
   a.querySelectorAll("[data-person]").forEach((b)=>b.onclick=()=>openPersonModal(b.dataset.person, b.dataset.ptype));
@@ -946,6 +964,12 @@ function openSalaryModal(emp){
     <label class="aw-field-label">مبلغ الراتب</label>
     <div class="aw-amount-wrap"><span class="aw-amount-cur" id="salCurSym">${esc(cur)}</span>
       <input class="aw-amount-input" id="salAmount" type="number" inputmode="decimal" placeholder="0" autofocus></div>
+    <label class="aw-field-label">خصم (سلفة / غياب) — اختياري</label>
+    <div class="aw-amount-wrap"><span class="aw-amount-cur">−</span>
+      <input class="aw-amount-input" id="salDeduct" type="number" inputmode="decimal" placeholder="0"></div>
+    <div class="aw-net-line" id="salNetLine"></div>
+    <label class="aw-field-label">ملاحظة الخصم (اختياري)</label>
+    <input class="aw-input" id="salDeductNote" type="text" placeholder="مثلاً: سلفة، غياب يومين">
     <label class="aw-field-label">من أي محفظة طلع الراتب؟ (اختياري)</label>
     <div class="aw-wallet-pick" id="salWallets"></div>
     <label class="aw-field-label">التاريخ</label>
@@ -962,12 +986,23 @@ function openSalaryModal(emp){
       + (wsx.length?"":`<div class="aw-mini-hint">ما في محافظ بعملة ${esc(cur)}.</div>`);
     walletsBox.querySelectorAll("[data-w]").forEach((b)=>b.onclick=()=>{ walletId=b.dataset.w; renderWallets(); });
   }
-  s.querySelector('[data-curpick="sal"]').querySelectorAll("[data-cv]").forEach((b)=>b.onclick=()=>{ cur=b.dataset.cv; s.querySelectorAll('[data-curpick="sal"] [data-cv]').forEach((x)=>x.classList.toggle("on", x.dataset.cv===cur)); s.querySelector("#salCurSym").textContent=cur; walletId=""; renderWallets(); });
-  renderWallets();
+  s.querySelector('[data-curpick="sal"]').querySelectorAll("[data-cv]").forEach((b)=>b.onclick=()=>{ cur=b.dataset.cv; s.querySelectorAll('[data-curpick="sal"] [data-cv]').forEach((x)=>x.classList.toggle("on", x.dataset.cv===cur)); s.querySelector("#salCurSym").textContent=cur; walletId=""; renderWallets(); updateNet(); });
+  const amtI=s.querySelector("#salAmount"), dedI=s.querySelector("#salDeduct"), netLine=s.querySelector("#salNetLine");
+  function updateNet(){ const a=parseFloat(amtI.value)||0, d=parseFloat(dedI.value)||0; const net=Math.max(0,a-d);
+    if(d>0 && a>0){ netLine.innerHTML=`الصافي بعد الخصم: <b>${fmt(net)} ${esc(cur)}</b> (راتب ${fmt(a)} − خصم ${fmt(d)})`; netLine.style.display="block"; }
+    else netLine.style.display="none"; }
+  amtI.oninput=updateNet; dedI.oninput=updateNet;
+  renderWallets(); updateNet();
   s.querySelector("#salCancel").onclick=m.close;
-  s.querySelector("#salSave").onclick=()=>{ const amt=parseFloat(s.querySelector("#salAmount").value); if(!(amt>0))return;
-    state.transactions.push({ id:uid(), type:"expense", amount:amt, cur, category:"salary", emp:emp.id, account:"work",
-      walletId:walletId||null, date:s.querySelector("#salDate").value, note:s.querySelector("#salNote").value.trim()||("راتب "+emp.name) });
+  s.querySelector("#salSave").onclick=()=>{ const gross=parseFloat(amtI.value); if(!(gross>0))return;
+    const deduct=Math.max(0,parseFloat(dedI.value)||0);
+    const net=Math.max(0,gross-deduct);
+    const dnote=s.querySelector("#salDeductNote").value.trim();
+    let note=s.querySelector("#salNote").value.trim()||("راتب "+emp.name);
+    if(deduct>0){ note += ` (راتب ${fmt(gross)} − خصم ${fmt(deduct)}${dnote?": "+dnote:""})`; }
+    state.transactions.push({ id:uid(), type:"expense", amount:net, cur, category:"salary", emp:emp.id, account:"work",
+      walletId:walletId||null, date:s.querySelector("#salDate").value, note,
+      gross:deduct>0?gross:undefined, deduct:deduct>0?deduct:undefined });
     state.activeCur=cur; save(); m.close(); render();
   };
 }
@@ -1114,6 +1149,46 @@ function openTxModal(editing) {
 }
 
 /* --- محفظة --- */
+function openWalletDetail(walletId){
+  const wl = state.wallets.find((x)=>x.id===walletId);
+  if(!wl) return;
+  const m = modalShell(`${walletIcon(wl.name)} ${esc(wl.name)}`, `<div id="wdBody"></div>`);
+  const body = m.sheet.querySelector("#wdBody");
+  function draw(){
+    const deltas = walletDeltas();
+    const bal = walletCurrent(wl, deltas);
+    const items = state.transactions
+      .filter((t)=>t.walletId===walletId && monthKeyOf(t.date)===state.viewMonth)
+      .sort((a,b)=>(a.date<b.date?1:a.date>b.date?-1:(a.id<b.id?1:a.id>b.id?-1:0)));
+    let inSum=0, outSum=0; items.forEach((t)=> t.type==="income"?(inSum+=t.amount):(outSum+=t.amount));
+    body.innerHTML = `
+      <div class="aw-person-sum ${bal<0?"out":"in"}"><span>الرصيد الحالي</span><b>${fmt(bal)} ${esc(wl.cur)}</b></div>
+      <div class="aw-wd-grid">
+        <div class="aw-wd-box"><span>الأساسي</span><b>${fmt(Number(wl.opening)||0)}</b></div>
+        <div class="aw-wd-box in"><span>وارد (${monthLabel(state.viewMonth)})</span><b>+${fmt(inSum)}</b></div>
+        <div class="aw-wd-box out"><span>صادر (${monthLabel(state.viewMonth)})</span><b>−${fmt(outSum)}</b></div>
+      </div>
+      <div class="aw-list-head"><span>حركات ${monthLabel(state.viewMonth)}</span><span class="aw-list-count">${items.length}</span></div>
+      <div class="aw-person-list">
+        ${items.length? items.map((t)=>{ const info=catInfo(t.category);
+          return `<div class="aw-person-row">
+            <div class="aw-person-row-head">
+              <span class="aw-person-amt ${t.type==="income"?"in":"out"}">${t.type==="income"?"+":"−"}${fmt(t.amount)} ${esc(t.cur)}</span>
+              <span class="aw-date">${esc(t.date)}</span>
+            </div>
+            <div class="aw-item-sub">
+              <span class="aw-tag">${info.icon} ${esc(info.label)}</span>
+              ${t.note?`<span class="aw-note">${esc(t.note)}</span>`:""}
+            </div>
+          </div>`; }).join("") : `<div class="aw-empty">ما في حركات على هالمحفظة بهالشهر.</div>`}
+      </div>
+      <div class="aw-sheet-actions"><button class="aw-btn ghost" id="wdClose">إغلاق</button><button class="aw-btn primary" id="wdEdit">✏️ تعديل المحفظة</button></div>`;
+    body.querySelector("#wdClose").onclick=m.close;
+    body.querySelector("#wdEdit").onclick=()=>{ m.close(); openWalletModal(wl); };
+  }
+  draw();
+}
+
 function openWalletModal(wallet) {
   const editing = wallet && wallet.id;
   let cur = editing?wallet.cur:state.activeCur;
@@ -1265,6 +1340,7 @@ function openSettings() {
       if(Array.isArray(data.debts)) state.debts=data.debts;
       if(Array.isArray(data.wallets)) state.wallets=data.wallets;
       if(data.cats && Array.isArray(data.cats.income) && Array.isArray(data.cats.expense)) state.cats=data.cats;
+      if(Array.isArray(data.employees)) state.employees=data.employees;
       if(data.activeCur) state.activeCur=data.activeCur;
       save(); m.close(); render(); alert("تم الاسترجاع ✅");
     }catch(err){ alert("الملف مش صالح."); } };
@@ -1352,6 +1428,7 @@ function download(filename, text, mime) {
 function exportJSON() {
   download(`daftar-backup-${todayStr()}.json`, JSON.stringify({
     transactions:state.transactions, debts:state.debts, wallets:state.wallets, cats:state.cats, activeCur:state.activeCur,
+    employees:state.employees||[],
     exportedAt: new Date().toISOString(),
   }, null, 2), "application/json");
 }

@@ -335,3 +335,16 @@ body{font-family:-apple-system,"SF Arabic","Segoe UI",system-ui,sans-serif;backg
 .aw-emp-item{cursor:pointer;}
 .aw-emp-item .aw-item-icon{background:var(--card-soft);}
 .aw-emp-item [data-paysal]{white-space:nowrap;}
+
+/* سطر الصافي بعد الخصم */
+.aw-net-line{display:none;font-size:14px;color:var(--gold);font-weight:700;margin:8px 2px 0;line-height:1.7;}
+.aw-net-line b{color:var(--income);}
+
+/* فلتر المحافظ + صفحة المحفظة */
+.aw-chips-wallet{margin-top:2px;flex-wrap:wrap;}
+.aw-wd-grid{display:flex;gap:8px;margin:12px 0;}
+.aw-wd-box{flex:1;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:10px 8px;text-align:center;}
+.aw-wd-box span{display:block;font-size:11px;color:var(--ink-soft);margin-bottom:4px;}
+.aw-wd-box b{font-size:16px;font-variant-numeric:tabular-nums;}
+.aw-wd-box.in b{color:var(--income);}
+.aw-wd-box.out b{color:var(--expense);}
