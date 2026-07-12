@@ -937,24 +937,59 @@ function salariesHTML(){
 }
 
 function openEmployeeModal(emp){
-  const ed = emp && emp.id ? emp : null;
-  const body = `
-    <label class="aw-field-label">اسم الموظف</label>
-    <input class="aw-input" id="empName" type="text" placeholder="مثلاً: أحمد" value="${ed?esc(ed.name):""}" autofocus>
-    <div class="aw-sheet-actions">
-      ${ed?`<button class="aw-btn danger" id="empDel">حذف</button>`:`<button class="aw-btn ghost" id="empCancel">إلغاء</button>`}
-      <button class="aw-btn primary" id="empSave">حفظ</button>
-    </div>`;
-  const m = modalShell(ed?"تعديل موظف":"موظف جديد", body);
-  const s = m.sheet;
-  s.querySelector("#empSave").onclick=()=>{ const nm=s.querySelector("#empName").value.trim(); if(!nm)return;
-    if(!state.employees) state.employees=[];
-    if(ed){ const i=state.employees.findIndex((x)=>x.id===ed.id); if(i>=0) state.employees[i].name=nm; }
-    else state.employees.push({id:uid(), name:nm});
-    save(); m.close(); render();
-  };
-  if(ed){ s.querySelector("#empDel").onclick=()=>confirmDialog("حذف هذا الموظف؟ (سجل رواتبه بيظل بالحركات)", ()=>{ state.employees=state.employees.filter((x)=>x.id!==ed.id); save(); m.close(); render(); }); }
-  else s.querySelector("#empCancel").onclick=m.close;
+  // موظف جديد
+  if(!emp || !emp.id){
+    const body = `
+      <label class="aw-field-label">اسم الموظف</label>
+      <input class="aw-input" id="empName" type="text" placeholder="مثلاً: أحمد" autofocus>
+      <div class="aw-sheet-actions"><button class="aw-btn ghost" id="empCancel">إلغاء</button><button class="aw-btn primary" id="empSave">حفظ</button></div>`;
+    const m = modalShell("موظف جديد", body);
+    const s = m.sheet;
+    s.querySelector("#empSave").onclick=()=>{ const nm=s.querySelector("#empName").value.trim(); if(!nm)return;
+      if(!state.employees) state.employees=[]; state.employees.push({id:uid(), name:nm}); save(); m.close(); render(); };
+    s.querySelector("#empCancel").onclick=m.close;
+    return;
+  }
+  // صفحة موظف موجود: تعديل الاسم + سجل الرواتب (تعديل/حذف لكل دفعة) + صرف راتب
+  const m = modalShell("👤 "+esc(emp.name), `<div id="empBody"></div>`);
+  const body = m.sheet.querySelector("#empBody");
+  function pays(){ return state.transactions
+    .filter((t)=>t.type==="expense" && t.category==="salary" && t.emp===emp.id)
+    .sort((a,b)=>(a.date<b.date?1:a.date>b.date?-1:(a.id<b.id?1:a.id>b.id?-1:0))); }
+  function draw(){
+    const list=pays();
+    const total=list.reduce((s,t)=>s+t.amount,0);
+    body.innerHTML = `
+      <label class="aw-field-label">اسم الموظف</label>
+      <div class="aw-emp-name-row">
+        <input class="aw-input" id="empName" type="text" value="${esc(emp.name)}">
+        <button class="aw-btn primary" id="empRename">حفظ الاسم</button>
+      </div>
+      <div class="aw-person-sum out" style="margin-top:14px"><span>إجمالي الرواتب المصروفة</span><b>${fmt(total)} ${esc(state.activeCur)}</b></div>
+      <div class="aw-list-head"><span>سجل الرواتب</span><span class="aw-list-count">${list.length}</span></div>
+      <div class="aw-person-list">
+        ${list.length? list.map((t)=>`<div class="aw-person-row">
+            <div class="aw-person-row-head">
+              <span class="aw-person-amt out">−${fmt(t.amount)} ${esc(t.cur)}</span>
+              <span class="aw-date">${esc(t.date)}</span>
+            </div>
+            ${t.note?`<div class="aw-item-sub"><span class="aw-note">${esc(t.note)}</span></div>`:""}
+            <div class="aw-person-row-actions">
+              <button class="aw-pay" data-empedit="${t.id}">تعديل</button>
+              <button class="aw-del" data-empdel="${t.id}" aria-label="حذف">🗑</button>
+            </div>
+          </div>`).join("") : `<div class="aw-empty">ما صُرف راتب لهالموظف بعد.</div>`}
+      </div>
+      <button class="aw-btn primary" id="empPay" style="width:100%">➕ صرف راتب لـ ${esc(emp.name)}</button>
+      <div class="aw-sheet-actions"><button class="aw-btn danger" id="empDel">حذف الموظف</button><button class="aw-btn ghost" id="empClose">إغلاق</button></div>`;
+    body.querySelector("#empRename").onclick=()=>{ const nm=body.querySelector("#empName").value.trim(); if(!nm)return; const i=state.employees.findIndex((x)=>x.id===emp.id); if(i>=0){ state.employees[i].name=nm; emp.name=nm; } save(); m.sheet.querySelector(".aw-sheet-title").textContent="👤 "+nm; render(); draw(); };
+    body.querySelector("#empPay").onclick=()=>{ m.close(); openSalaryModal(emp); };
+    body.querySelectorAll("[data-empedit]").forEach((b)=>b.onclick=()=>{ const t=state.transactions.find((x)=>x.id===b.dataset.empedit); if(t){ m.close(); openTxModal(t); } });
+    body.querySelectorAll("[data-empdel]").forEach((b)=>b.onclick=()=>confirmDialog("حذف دفعة الراتب هذه؟", ()=>{ state.transactions=state.transactions.filter((x)=>x.id!==b.dataset.empdel); save(); render(); draw(); }));
+    body.querySelector("#empDel").onclick=()=>confirmDialog("حذف هذا الموظف؟ (سجل رواتبه بيظل بالحركات)", ()=>{ state.employees=state.employees.filter((x)=>x.id!==emp.id); save(); m.close(); render(); });
+    body.querySelector("#empClose").onclick=m.close;
+  }
+  draw();
 }
 
 function openSalaryModal(emp){
@@ -1149,6 +1184,52 @@ function openTxModal(editing) {
 }
 
 /* --- محفظة --- */
+function openKeygenModal(){
+  let plan="M";
+  const body = `
+    <div class="aw-mini-hint" style="margin-bottom:10px">اكتب اسم الزبون ورمز جهازه، واختر المدة — الكود بيظهر تلقائياً.</div>
+    <label class="aw-field-label">اسم الزبون (بالظبط متل ما رح يدخله)</label>
+    <input class="aw-input" id="kgName" type="text" placeholder="مثلاً: أحمد محمد" autocomplete="off">
+    <label class="aw-field-label">رمز جهاز الزبون</label>
+    <input class="aw-input" id="kgDev" type="text" placeholder="مثلاً: 7K2P9X" autocapitalize="characters" autocomplete="off">
+    <label class="aw-field-label">مدة الاشتراك</label>
+    <div class="aw-type-toggle aw-kg-plans">
+      <button class="aw-type-btn on" data-kp="M">شهر</button>
+      <button class="aw-type-btn" data-kp="H">6 شهور</button>
+      <button class="aw-type-btn" data-kp="Y">سنة</button>
+      <button class="aw-type-btn" data-kp="life">دائم</button>
+    </div>
+    <div class="aw-kg-out empty" id="kgOut">
+      <div class="aw-kg-code ph" id="kgCode">اكتب الاسم والرمز…</div>
+      <div class="aw-kg-plan" id="kgPlan"></div>
+      <button class="aw-btn primary" id="kgCopy" style="margin-top:12px">📋 نسخ الكود</button>
+      <div class="aw-kg-tip" id="kgTip"></div>
+    </div>
+    <div class="aw-sheet-actions"><button class="aw-btn ghost" id="kgClose">إغلاق</button></div>`;
+  const m = modalShell("🔑 توليد أكواد التفعيل", body);
+  const s = m.sheet;
+  const nameI=s.querySelector("#kgName"), devI=s.querySelector("#kgDev");
+  const codeEl=s.querySelector("#kgCode"), planEl=s.querySelector("#kgPlan"), outEl=s.querySelector("#kgOut");
+  const PLAN_TXT={M:"شهر",H:"6 شهور",Y:"سنة",life:"دائم"};
+  function gen(){
+    const n=nameI.value||"", dev=devI.value||"";
+    if(!n.trim()||!dev.trim()){ codeEl.className="aw-kg-code ph"; codeEl.textContent="اكتب الاسم والرمز…"; planEl.textContent=""; outEl.className="aw-kg-out empty"; return; }
+    const code = (plan==="life") ? makeCode(n, normDevInput(dev)) : makeCodePlan(n, normDevInput(dev), plan);
+    codeEl.className="aw-kg-code"; codeEl.textContent=code;
+    planEl.textContent="المدة: "+PLAN_TXT[plan]; outEl.className="aw-kg-out";
+  }
+  function normDevInput(d){ return (d||"").toUpperCase().replace(/[^0-9A-Z]/g,""); }
+  nameI.oninput=gen; devI.oninput=gen;
+  s.querySelectorAll("[data-kp]").forEach((b)=>b.onclick=()=>{ plan=b.dataset.kp; s.querySelectorAll("[data-kp]").forEach((x)=>x.classList.toggle("on", x.dataset.kp===plan)); gen(); });
+  s.querySelector("#kgCopy").onclick=()=>{ const code=codeEl.textContent||""; const tip=s.querySelector("#kgTip"); if(!code||code.indexOf("اكتب")===0)return;
+    function done(){ tip.textContent="تم النسخ ✅"; setTimeout(()=>tip.textContent="",1600); }
+    function fb(){ const t=document.createElement("textarea"); t.value=code; t.style.position="fixed"; t.style.opacity="0"; document.body.appendChild(t); t.focus(); t.select(); try{document.execCommand("copy");}catch(e){} document.body.removeChild(t); done(); }
+    if(navigator.clipboard&&navigator.clipboard.writeText){ navigator.clipboard.writeText(code).then(done,fb); } else fb();
+  };
+  s.querySelector("#kgClose").onclick=m.close;
+}
+
+function openKeygenModal_end(){}
 function openWalletDetail(walletId){
   const wl = state.wallets.find((x)=>x.id===walletId);
   if(!wl) return;
@@ -1313,6 +1394,7 @@ function openSettings() {
     <button class="aw-set-btn" id="howInstall">📲 كيف أثبّت التطبيق؟</button>
     <button class="aw-set-btn" id="faqBtn">❓ الأسئلة الشائعة</button>
     ${isOwner()?`<button class="aw-set-btn" id="payBtn">💳 إعدادات الدفع</button>`:""}
+    ${isOwner()?`<button class="aw-set-btn" id="keygenBtn">🔑 توليد أكواد التفعيل</button>`:""}
     <button class="aw-set-btn" id="expCsv">📊 تصدير الحركات (CSV / Excel)</button>
     <button class="aw-set-btn" id="expJson">💾 نسخة احتياطية كاملة (JSON)</button>
     <label class="aw-set-btn" id="impLbl">📥 استرجاع نسخة احتياطية<input type="file" id="impFile" accept="application/json,.json" hidden></label>
@@ -1331,6 +1413,7 @@ function openSettings() {
   s.querySelector("#howInstall").onclick=()=>{ m.close(); openWelcome(); };
   s.querySelector("#faqBtn").onclick=()=>{ m.close(); openFAQ(); };
   const payB = s.querySelector("#payBtn"); if (payB) payB.onclick=()=>{ m.close(); openPayEditor(); };
+  const kgB = s.querySelector("#keygenBtn"); if (kgB) kgB.onclick=()=>{ m.close(); openKeygenModal(); };
   s.querySelector("#expCsv").onclick=exportCSV;
   s.querySelector("#expJson").onclick=exportJSON;
   s.querySelector("#wipe").onclick=()=>confirmDialog("متأكد؟ رح ينمسح كل شي ولا في رجعة.", ()=>{ state.transactions=[];state.debts=[];state.wallets=[]; save(); m.close(); render(); });
@@ -1452,5 +1535,25 @@ render();
 maybeWelcome();
 
 if ("serviceWorker" in navigator) {
-  window.addEventListener("load", ()=>{ navigator.serviceWorker.register("./service-worker.js").catch(()=>{}); });
+  window.addEventListener("load", ()=>{
+    navigator.serviceWorker.register("./service-worker.js").then((reg)=>{
+      // فحص تحديث كل ما يفتح التطبيق
+      try{ reg.update(); }catch(e){}
+      reg.addEventListener("updatefound", ()=>{
+        const nw = reg.installing;
+        if(!nw) return;
+        nw.addEventListener("statechange", ()=>{
+          if(nw.state==="installed" && navigator.serviceWorker.controller){
+            // نسخة جديدة جاهزة — فعّلها
+            nw.postMessage("skipWaiting");
+          }
+        });
+      });
+    }).catch(()=>{});
+    // لما يتفعّل service-worker جديد، أعد تحميل الصفحة مرة وحدة لتظهر النسخة الجديدة
+    let reloaded=false;
+    navigator.serviceWorker.addEventListener("controllerchange", ()=>{
+      if(reloaded) return; reloaded=true; window.location.reload();
+    });
+  });
 }

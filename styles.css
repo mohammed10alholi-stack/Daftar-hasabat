@@ -348,3 +348,16 @@ body{font-family:-apple-system,"SF Arabic","Segoe UI",system-ui,sans-serif;backg
 .aw-wd-box b{font-size:16px;font-variant-numeric:tabular-nums;}
 .aw-wd-box.in b{color:var(--income);}
 .aw-wd-box.out b{color:var(--expense);}
+
+/* مولّد الأكواد داخل التطبيق */
+.aw-kg-plans{flex-wrap:wrap;gap:6px;}
+.aw-kg-plans .aw-type-btn{flex:1;min-width:70px;}
+.aw-kg-out{margin-top:18px;background:var(--card-soft);border:1px dashed var(--accent);border-radius:14px;padding:18px 14px;text-align:center;}
+.aw-kg-out.empty{border-color:var(--line);}
+.aw-kg-code{font-size:26px;font-weight:800;letter-spacing:2px;font-variant-numeric:tabular-nums;word-break:break-all;}
+.aw-kg-code.ph{color:var(--ink-soft);font-size:17px;letter-spacing:0;font-weight:600;}
+.aw-kg-plan{font-size:14px;color:var(--gold);font-weight:700;margin-top:6px;}
+.aw-kg-tip{font-size:13px;color:var(--accent);font-weight:700;margin-top:8px;min-height:18px;}
+.aw-emp-name-row{display:flex;gap:8px;align-items:center;}
+.aw-emp-name-row .aw-input{flex:1;}
+.aw-emp-name-row .aw-btn{white-space:nowrap;}
