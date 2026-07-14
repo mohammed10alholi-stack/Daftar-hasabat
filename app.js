@@ -26,6 +26,8 @@ const DEFAULT_EXPENSE_CATS = [
   { id: "maintenance", label: "صيانة", icon: "🔧" },
   { id: "other_out", label: "أخرى", icon: "•" },
 ];
+const DEBT_CATS = ["debt_lend","debt_borrow","debt_collect","debt_payment"];
+function isDebtTx(t){ return DEBT_CATS.indexOf(t.category)>=0; }
 const EXTRA_CATS = [
   { id: "debt_payment", label: "تسديد دَين", icon: "📌" },
   { id: "debt_collect", label: "تحصيل دَين", icon: "🤝" },
@@ -449,16 +451,16 @@ function accountsHTML() {
     .filter((t)=>state.accountFilter==="all"||t.account===state.accountFilter)
     .sort((a,b)=>(a.date<b.date?1:a.date>b.date?-1:(a.id<b.id?1:a.id>b.id?-1:0)));
   let income=0, expense=0;
-  tx.forEach((t)=> t.type==="income"?(income+=t.amount):(expense+=t.amount));
+  tx.forEach((t)=>{ if(isDebtTx(t)) return; t.type==="income"?(income+=t.amount):(expense+=t.amount); });
   const balance = income-expense;
 
   const bdMap = {};
-  tx.filter((t)=>t.type==="expense").forEach((t)=>bdMap[t.category]=(bdMap[t.category]||0)+t.amount);
+  tx.filter((t)=>t.type==="expense"&&!isDebtTx(t)).forEach((t)=>bdMap[t.category]=(bdMap[t.category]||0)+t.amount);
   const bd = Object.entries(bdMap).map(([id,amount])=>({id,amount})).sort((a,b)=>b.amount-a.amount);
   const bdMax = bd.length?bd[0].amount:0;
 
   const inMap = {};
-  tx.filter((t)=>t.type==="income").forEach((t)=>inMap[t.category]=(inMap[t.category]||0)+t.amount);
+  tx.filter((t)=>t.type==="income"&&!isDebtTx(t)).forEach((t)=>inMap[t.category]=(inMap[t.category]||0)+t.amount);
   const ibd = Object.entries(inMap).map(([id,amount])=>({id,amount})).sort((a,b)=>b.amount-a.amount);
   const ibdMax = ibd.length?ibd[0].amount:0;
 
@@ -551,7 +553,7 @@ function chartHTML() {
   const now = new Date(); const keys = [];
   for (let i=5;i>=0;i--){ const d=new Date(now.getFullYear(), now.getMonth()-i, 1); keys.push(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`); }
   const inc = {}, exp = {};
-  curTx().forEach((t)=>{ const k=monthKeyOf(t.date); if(!keys.includes(k))return; if(t.type==="income")inc[k]=(inc[k]||0)+t.amount; else exp[k]=(exp[k]||0)+t.amount; });
+  curTx().forEach((t)=>{ const k=monthKeyOf(t.date); if(!keys.includes(k))return; if(isDebtTx(t))return; if(t.type==="income")inc[k]=(inc[k]||0)+t.amount; else exp[k]=(exp[k]||0)+t.amount; });
   const max = Math.max(1, ...keys.map((k)=>Math.max(inc[k]||0, exp[k]||0)));
   const any = keys.some((k)=>inc[k]||exp[k]);
   if (!any) return "";
@@ -721,7 +723,7 @@ function openPersonModal(name, type){
 /* ----- تبويب التقارير ----- */
 function prevMonthKey(key){ const [y,m]=key.split("-").map(Number); const d=new Date(y, m-2, 1); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`; }
 function txOfMonth(cur,key){ return state.transactions.filter((t)=>t.cur===cur && monthKeyOf(t.date)===key); }
-function sumType(txs,type){ return txs.filter((t)=>t.type===type).reduce((s,t)=>s+t.amount,0); }
+function sumType(txs,type){ return txs.filter((t)=>t.type===type && !isDebtTx(t)).reduce((s,t)=>s+t.amount,0); }
 
 function computeReport(cur){
   const mKey=monthKeyOf(todayStr()), pKey=prevMonthKey(mKey), year=mKey.slice(0,4);
@@ -730,9 +732,9 @@ function computeReport(cur){
   const pexp=sumType(txOfMonth(cur,pKey),"expense");
   const ytx=state.transactions.filter((t)=>t.cur===cur && t.date.slice(0,4)===year);
   const yinc=sumType(ytx,"income"), yexp=sumType(ytx,"expense");
-  const map={}; mtx.filter((t)=>t.type==="expense").forEach((t)=>map[t.category]=(map[t.category]||0)+t.amount);
+  const map={}; mtx.filter((t)=>t.type==="expense"&&!isDebtTx(t)).forEach((t)=>map[t.category]=(map[t.category]||0)+t.amount);
   const top=Object.entries(map).map(([id,a])=>({id,a})).sort((x,y)=>y.a-x.a).slice(0,3);
-  const imap={}; mtx.filter((t)=>t.type==="income").forEach((t)=>imap[t.category]=(imap[t.category]||0)+t.amount);
+  const imap={}; mtx.filter((t)=>t.type==="income"&&!isDebtTx(t)).forEach((t)=>imap[t.category]=(imap[t.category]||0)+t.amount);
   const itop=Object.entries(imap).map(([id,a])=>({id,a})).sort((x,y)=>y.a-x.a).slice(0,5);
   let cmp=null;
   if(!(exp===0&&pexp===0)){
