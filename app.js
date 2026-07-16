@@ -84,6 +84,9 @@ function todayStr() {
   return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
 }
 function monthKeyOf(s) { return s.slice(0, 7); }
+function nowTime(){ const d=new Date(); return `${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}`; }
+function fmtTime(t){ if(!t) return ""; const p=String(t).split(":"); let h=parseInt(p[0],10); const mnt=p[1]||"00";
+  const ampm = h<12 ? "ص" : "م"; let h12 = h%12; if(h12===0) h12=12; return `${h12}:${mnt} ${ampm}`; }
 function fmt(n) {
   const neg = n < 0, v = Math.abs(Math.round(n*100)/100);
   return (neg?"-":"") + v.toLocaleString("en-US",{minimumFractionDigits:v%1?2:0,maximumFractionDigits:2});
@@ -536,7 +539,7 @@ function accountsHTML() {
             ${wn?`<span class="aw-tag wallet">${walletIcon(wn)} ${esc(wn)}</span>`:""}
             ${t.note?`<span class="aw-note">${esc(t.note)}</span>`:""}
             ${t.hasInvoice?`<button class="aw-inv-tag" data-inv="${t.id}">📎 فاتورة</button>`:""}
-            <span class="aw-date">${esc(t.date)}</span>
+            <span class="aw-date">${esc(t.date)}${t.time?` <span class="aw-time">${esc(fmtTime(t.time))}</span>`:""}</span>
           </div>
         </div>
         <button class="aw-edit" data-edittx="${t.id}" aria-label="تعديل">✏️</button>
@@ -973,7 +976,7 @@ function openEmployeeModal(emp){
         ${list.length? list.map((t)=>`<div class="aw-person-row">
             <div class="aw-person-row-head">
               <span class="aw-person-amt out">−${fmt(t.amount)} ${esc(t.cur)}</span>
-              <span class="aw-date">${esc(t.date)}</span>
+              <span class="aw-date">${esc(t.date)}${t.time?` <span class="aw-time">${esc(fmtTime(t.time))}</span>`:""}</span>
             </div>
             ${t.note?`<div class="aw-item-sub"><span class="aw-note">${esc(t.note)}</span></div>`:""}
             <div class="aw-person-row-actions">
@@ -1038,7 +1041,7 @@ function openSalaryModal(emp){
     let note=s.querySelector("#salNote").value.trim()||("راتب "+emp.name);
     if(deduct>0){ note += ` (راتب ${fmt(gross)} − خصم ${fmt(deduct)}${dnote?": "+dnote:""})`; }
     state.transactions.push({ id:uid(), type:"expense", amount:net, cur, category:"salary", emp:emp.id, account:"work",
-      walletId:walletId||null, date:s.querySelector("#salDate").value, note,
+      walletId:walletId||null, date:s.querySelector("#salDate").value, time:nowTime(), note,
       gross:deduct>0?gross:undefined, deduct:deduct>0?deduct:undefined });
     state.activeCur=cur; save(); m.close(); render();
   };
@@ -1061,7 +1064,7 @@ function openCatDetail(type, catId){
         return `<div class="aw-person-row">
           <div class="aw-person-row-head">
             <span class="aw-person-amt ${cls}">${type==="income"?"+":"−"}${fmt(t.amount)} ${esc(t.cur)}</span>
-            <span class="aw-date">${esc(t.date)}</span>
+            <span class="aw-date">${esc(t.date)}${t.time?` <span class="aw-time">${esc(fmtTime(t.time))}</span>`:""}</span>
           </div>
           <div class="aw-item-sub">
             <span class="aw-tag ${t.account==="work"?"work":"personal"}">${t.account==="work"?"شغل":"شخصي"}</span>
@@ -1175,7 +1178,7 @@ function openTxModal(editing) {
 
   saveBtn.onclick = async ()=>{ if(!validate())return;
     const id = ed ? ed.id : uid();
-    const tx = { id, type, amount:parseFloat(amount.value), cur, category, account, walletId:walletId||null, date:s.querySelector("#txDate").value, note:s.querySelector("#txNote").value.trim() };
+    const tx = { id, type, amount:parseFloat(amount.value), cur, category, account, walletId:walletId||null, date:s.querySelector("#txDate").value, time: ed?(ed.time||nowTime()):nowTime(), note:s.querySelector("#txNote").value.trim() };
     if (pendingInvoice){ const ok = await invSave(id, pendingInvoice); if(ok) tx.hasInvoice = true; }
     else if (ed && ed.hasInvoice){ await invDel(id); } // أُزيلت الفاتورة
     if (ed){ const i = state.transactions.findIndex((t)=>t.id===ed.id); if(i>=0) state.transactions[i]=tx; }
@@ -1257,7 +1260,7 @@ function openWalletDetail(walletId){
           return `<div class="aw-person-row">
             <div class="aw-person-row-head">
               <span class="aw-person-amt ${t.type==="income"?"in":"out"}">${t.type==="income"?"+":"−"}${fmt(t.amount)} ${esc(t.cur)}</span>
-              <span class="aw-date">${esc(t.date)}</span>
+              <span class="aw-date">${esc(t.date)}${t.time?` <span class="aw-time">${esc(fmtTime(t.time))}</span>`:""}</span>
             </div>
             <div class="aw-item-sub">
               <span class="aw-tag">${info.icon} ${esc(info.label)}</span>
@@ -1348,7 +1351,7 @@ function openDebtModal(prefill, onDone) {
       const mine = type==="owed_to_me"; // أعطيت فلوس => صادر ؛ أخذت فلوس => وارد
       state.transactions.push({ id:uid(), type: mine?"expense":"income", amount, cur,
         category: mine?"debt_lend":"debt_borrow", account:"personal", walletId,
-        date:s.querySelector("#dDate").value, note:(mine?"دين لـ ":"دين من ")+nm });
+        date:s.querySelector("#dDate").value, time:nowTime(), note:(mine?"دين لـ ":"دين من ")+nm });
     }
     state.activeCur=cur; save(); m.close(); render(); if(onDone) onDone();
   };
@@ -1381,7 +1384,7 @@ function openPayModal(debt, onDone) {
     if (walletId) {
       state.transactions.push({ id:uid(), type: mine?"income":"expense", amount:amt, cur:debt.cur,
         category: mine?"debt_collect":"debt_payment", account:"personal", walletId,
-        date:todayStr(), note:(mine?"تحصيل من ":"تسديد لـ ")+debt.name });
+        date:todayStr(), time:nowTime(), note:(mine?"تحصيل من ":"تسديد لـ ")+debt.name });
     }
     save(); m.close(); render(); if(onDone) onDone();
   };

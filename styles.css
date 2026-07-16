@@ -361,3 +361,6 @@ body{font-family:-apple-system,"SF Arabic","Segoe UI",system-ui,sans-serif;backg
 .aw-emp-name-row{display:flex;gap:8px;align-items:center;}
 .aw-emp-name-row .aw-input{flex:1;}
 .aw-emp-name-row .aw-btn{white-space:nowrap;}
+
+/* وقت الحركة */
+.aw-time{opacity:.75;font-size:11px;margin-inline-start:2px;}
