@@ -204,7 +204,19 @@ let state = {
   activeCur: "₪", tab: "accounts",
   viewMonth: monthKeyOf(todayStr()),
   accountFilter: "all", debtFilter: "all", showSettled: false,
+  range: null,
 };
+
+/* --- الفترة: لو مفعّلة بتستبدل عرض الشهر --- */
+function inViewPeriod(t){
+  if(state.range) return t.date >= state.range.from && t.date <= state.range.to;
+  return monthKeyOf(t.date) === state.viewMonth;
+}
+function periodLabel(){
+  if(!state.range) return monthLabel(state.viewMonth);
+  return `${state.range.from} ← ${state.range.to}`;
+}
+function periodShort(){ return state.range ? "الفترة المحددة" : monthLabel(state.viewMonth); }
 
 function load() {
   try {
@@ -450,7 +462,7 @@ function fabHTML(){ return state.tab==="reports" ? "" : `<button class="aw-fab" 
 function accountsHTML() {
   const months = monthsList();
   const idx = months.indexOf(state.viewMonth);
-  const tx = curTx().filter((t)=>monthKeyOf(t.date)===state.viewMonth)
+  const tx = curTx().filter((t)=>inViewPeriod(t))
     .filter((t)=>state.accountFilter==="all"||t.account===state.accountFilter)
     .sort((a,b)=>(a.date<b.date?1:a.date>b.date?-1:(a.id<b.id?1:a.id>b.id?-1:0)));
   let income=0, expense=0;
@@ -467,13 +479,20 @@ function accountsHTML() {
   const ibd = Object.entries(inMap).map(([id,amount])=>({id,amount})).sort((a,b)=>b.amount-a.amount);
   const ibdMax = ibd.length?ibd[0].amount:0;
 
-  let html = `<div class="aw-month-nav">
+  let html = state.range
+    ? `<div class="aw-range-bar">
+        <span class="aw-range-txt">📅 ${esc(state.range.from)} ← ${esc(state.range.to)}</span>
+        <button class="aw-range-clear" data-act="clearRange">✕ إلغاء</button>
+      </div>`
+    : `<div class="aw-month-nav">
       <button class="aw-month-arrow" data-mon="-1" ${idx<=0?"disabled":""}>‹</button>
       <span class="aw-month-label">${monthLabel(state.viewMonth)}</span>
       <button class="aw-month-arrow" data-mon="1" ${idx>=months.length-1?"disabled":""}>›</button>
-    </div>
+      <button class="aw-range-btn" data-act="openRange" aria-label="بحث بفترة">📅</button>
+    </div>`;
+  html += `
     <section class="aw-ledger">
-      <div class="aw-ledger-label">صافي الحركة هذا الشهر — ${esc(state.activeCur)}</div>
+      <div class="aw-ledger-label">صافي ${state.range?"الفترة":"الحركة هذا الشهر"} — ${esc(state.activeCur)}</div>
       <div class="aw-balance ${balance<0?"neg":"pos"}"><span class="aw-cur-sym">${esc(state.activeCur)}</span><span class="aw-balance-num">${fmt(balance)}</span></div>
       <div class="aw-ledger-cols">
         <div class="aw-col income"><span class="aw-col-cap">وارد</span><span class="aw-col-val">${fmt(income)}</span></div>
@@ -748,61 +767,189 @@ function computeReport(cur){
     monthName: AR_MONTHS[parseInt(mKey.split("-")[1],10)-1], prevName: AR_MONTHS[parseInt(pKey.split("-")[1],10)-1] };
 }
 
+/* تقرير شامل لأي فترة */
+function reportPeriod(){
+  if(state.range) return { from: state.range.from, to: state.range.to, label: `${state.range.from} ← ${state.range.to}` };
+  const k = state.viewMonth;
+  const [y,mm] = k.split("-").map(Number);
+  const last = new Date(y, mm, 0).getDate();
+  return { from: `${k}-01`, to: `${k}-${String(last).padStart(2,"0")}`, label: monthLabel(k) };
+}
+function computeFullReport(cur){
+  const p = reportPeriod();
+  const txs = state.transactions.filter((t)=>t.cur===cur && t.date>=p.from && t.date<=p.to);
+  const real = txs.filter((t)=>!isDebtTx(t));
+  const inc = real.filter((t)=>t.type==="income").reduce((s,t)=>s+t.amount,0);
+  const exp = real.filter((t)=>t.type==="expense").reduce((s,t)=>s+t.amount,0);
+
+  const byCat=(type)=>{ const m={}; real.filter((t)=>t.type===type).forEach((t)=>m[t.category]=(m[t.category]||0)+t.amount);
+    return Object.entries(m).map(([id,a])=>({id,a})).sort((x,y)=>y.a-x.a); };
+
+  // المحافظ: وارد/صادر خلال الفترة + الرصيد الحالي
+  const wallets = state.wallets.filter((w)=>w.cur===cur).map((w)=>{
+    const wt = txs.filter((t)=>t.walletId===w.id);
+    const wi = wt.filter((t)=>t.type==="income").reduce((s,t)=>s+t.amount,0);
+    const wo = wt.filter((t)=>t.type==="expense").reduce((s,t)=>s+t.amount,0);
+    return { name:w.name, inSum:wi, outSum:wo, balance: walletCurrent(w), count: wt.length };
+  });
+
+  // الديون خلال الفترة
+  const dts = state.debts.filter((d)=>d.cur===cur && d.date>=p.from && d.date<=p.to);
+  const owedToMe = dts.filter((d)=>d.type==="owed_to_me").reduce((s,d)=>s+Math.max(0,d.amount-(d.paid||0)),0);
+  const iOwe = dts.filter((d)=>d.type==="i_owe").reduce((s,d)=>s+Math.max(0,d.amount-(d.paid||0)),0);
+  const debtPeople = {};
+  dts.forEach((d)=>{ const k=normName(d.name)+"|"+d.type;
+    if(!debtPeople[k]) debtPeople[k]={name:d.name,type:d.type,amount:0,paid:0,count:0};
+    debtPeople[k].amount+=d.amount; debtPeople[k].paid+=(d.paid||0); debtPeople[k].count++; });
+
+  // الرواتب خلال الفترة
+  const salTx = txs.filter((t)=>t.category==="salary");
+  const salTotal = salTx.reduce((s,t)=>s+t.amount,0);
+  const salByEmp = {};
+  salTx.forEach((t)=>{ const e=(state.employees||[]).find((x)=>x.id===t.emp);
+    const nm = e?e.name:"غير محدد";
+    if(!salByEmp[nm]) salByEmp[nm]={name:nm,total:0,count:0};
+    salByEmp[nm].total+=t.amount; salByEmp[nm].count++; });
+
+  return { p, cur, txs: txs.slice().sort((a,b)=>(a.date<b.date?1:a.date>b.date?-1:(a.id<b.id?1:a.id>b.id?-1:0))),
+    inc, exp, net: inc-exp, incCats: byCat("income"), expCats: byCat("expense"),
+    wallets, owedToMe, iOwe, debtPeople: Object.values(debtPeople),
+    salTotal, salByEmp: Object.values(salByEmp) };
+}
+
 function reportsHTML(){
-  const cur=state.activeCur, r=computeReport(cur);
-  const has = r.inc||r.exp||r.yinc||r.yexp;
-  if(!has) return `<section class="aw-list"><div class="aw-empty">ما في بيانات كفاية بعملة ${esc(cur)} لعمل تقرير.<br>سجّل كم حركة وبيطلعلك الملخص هون.</div></section>`;
+  const cur=state.activeCur;
+  const R=computeFullReport(cur);
+  const months = monthsList();
+  const idx = months.indexOf(state.viewMonth);
 
-  let cmpHTML="";
-  if(r.cmp){
-    if(r.cmp.kind==="none") cmpHTML=`<div class="aw-rep-cmp"><span class="aw-note">${r.cmp.txt}</span></div>`;
-    else if(r.cmp.kind==="same") cmpHTML=`<div class="aw-rep-cmp"><span class="aw-note">صرفت نفس الشهر السابق تقريباً.</span></div>`;
-    else cmpHTML=`<div class="aw-rep-cmp ${r.cmp.up?"up":"down"}">${r.cmp.up?"▲":"▼"} صرفت ${r.cmp.up?"أكثر":"أقل"} بـ ${r.cmp.pct}% عن ${esc(r.prevName)}</div>`;
+  const bar = state.range
+    ? `<div class="aw-range-bar">
+        <span class="aw-range-txt">📅 ${esc(R.p.from)} ← ${esc(R.p.to)}</span>
+        <button class="aw-range-clear" data-act="clearRange">✕ إلغاء</button>
+      </div>`
+    : `<div class="aw-month-nav">
+        <button class="aw-month-arrow" data-mon="-1" ${idx<=0?"disabled":""}>‹</button>
+        <span class="aw-month-label">${monthLabel(state.viewMonth)}</span>
+        <button class="aw-month-arrow" data-mon="1" ${idx>=months.length-1?"disabled":""}>›</button>
+        <button class="aw-range-btn" data-act="openRange" aria-label="بحث بفترة">📅</button>
+      </div>`;
+
+  if(!R.txs.length && !R.debtPeople.length){
+    return bar + `<section class="aw-list"><div class="aw-empty">ما في بيانات بعملة ${esc(cur)} بهالفترة.<br>غيّر الفترة أو سجّل حركات.</div></section>`;
   }
-  const topHTML = r.top.length ? r.top.map((row)=>{ const info=catInfo(row.id); const pct=r.exp?Math.round((row.a/r.exp)*100):0;
-    return `<div class="aw-rep-row"><span>${info.icon} ${esc(info.label)}</span><span class="aw-rep-amt">${fmt(row.a)} ${esc(cur)} <span class="aw-bd-pct">${pct}%</span></span></div>`; }).join("") : `<span class="aw-note">ما في مصاريف هالشهر.</span>`;
-  const itopHTML = (r.itop&&r.itop.length) ? r.itop.map((row)=>{ const info=catInfo(row.id); const pct=r.inc?Math.round((row.a/r.inc)*100):0;
-    return `<div class="aw-rep-row"><span>${info.icon} ${esc(info.label)}</span><span class="aw-rep-amt in">${fmt(row.a)} ${esc(cur)} <span class="aw-bd-pct">${pct}%</span></span></div>`; }).join("") : `<span class="aw-note">ما في واردات هالشهر.</span>`;
 
-  return `
+  const catRows=(rows,total,cls)=> rows.length ? rows.map((row)=>{ const info=catInfo(row.id); const pct=total?Math.round((row.a/total)*100):0;
+      return `<div class="aw-rep-row"><span>${info.icon} ${esc(info.label)}</span><span class="aw-rep-amt ${cls}">${fmt(row.a)} ${esc(cur)} <span class="aw-bd-pct">${pct}%</span></span></div>`;
+    }).join("") : `<span class="aw-note">ما في.</span>`;
+
+  const walletRows = R.wallets.length ? R.wallets.map((w)=>`
+      <div class="aw-rep-row"><span>${walletIcon(w.name)} ${esc(w.name)}</span>
+        <span class="aw-rep-amt">${fmt(w.balance)} ${esc(cur)}
+          <span class="aw-bd-pct in">+${fmt(w.inSum)}</span> <span class="aw-bd-pct out">−${fmt(w.outSum)}</span></span></div>`).join("")
+    : `<span class="aw-note">ما في محافظ بهالعملة.</span>`;
+
+  const debtRows = R.debtPeople.length ? R.debtPeople.map((d)=>{ const rem=Math.max(0,d.amount-d.paid);
+      return `<div class="aw-rep-row"><span>${d.type==="owed_to_me"?"🤝":"📌"} ${esc(d.name)} <span class="aw-bd-pct">${d.count} حركة</span></span>
+        <span class="aw-rep-amt ${d.type==="owed_to_me"?"in":"out"}">${rem>0?fmt(rem)+" "+esc(cur):"مسدّد"}</span></div>`; }).join("")
+    : `<span class="aw-note">ما في ديون بهالفترة.</span>`;
+
+  const salRows = R.salByEmp.length ? R.salByEmp.map((e)=>`
+      <div class="aw-rep-row"><span>👤 ${esc(e.name)} <span class="aw-bd-pct">${e.count} دفعة</span></span>
+        <span class="aw-rep-amt out">${fmt(e.total)} ${esc(cur)}</span></div>`).join("")
+    : `<span class="aw-note">ما في رواتب بهالفترة.</span>`;
+
+  return bar + `
     <section class="aw-card aw-rep-card">
-      <div class="aw-card-title">ملخص ${esc(r.monthName)} ${esc(r.mKey.slice(0,4))} — ${esc(cur)}</div>
+      <div class="aw-card-title">ملخص ${esc(R.p.label)} — ${esc(cur)}</div>
       <div class="aw-rep-grid">
-        <div class="aw-rep-box"><span class="aw-rep-cap">وارد</span><span class="aw-rep-val in">${fmt(r.inc)}</span></div>
-        <div class="aw-rep-box"><span class="aw-rep-cap">صادر</span><span class="aw-rep-val out">${fmt(r.exp)}</span></div>
-        <div class="aw-rep-box"><span class="aw-rep-cap">الصافي</span><span class="aw-rep-val ${r.net<0?"out":"net"}">${fmt(r.net)}</span></div>
+        <div class="aw-rep-box"><span class="aw-rep-cap">وارد</span><span class="aw-rep-val in">${fmt(R.inc)}</span></div>
+        <div class="aw-rep-box"><span class="aw-rep-cap">صادر</span><span class="aw-rep-val out">${fmt(R.exp)}</span></div>
+        <div class="aw-rep-box"><span class="aw-rep-cap">الصافي</span><span class="aw-rep-val ${R.net<0?"out":"net"}">${fmt(R.net)}</span></div>
       </div>
-      ${cmpHTML}
+      <div class="aw-rep-cmp"><span class="aw-note">${R.txs.length} حركة خلال الفترة</span></div>
     </section>
-    <section class="aw-card"><div class="aw-card-title">من وين إجا الدخل هالشهر</div>${itopHTML}</section>
-    <section class="aw-card"><div class="aw-card-title">أكتر التصنيفات صرفاً هالشهر</div>${topHTML}</section>
-    <section class="aw-card">
-      <div class="aw-card-title">ملخص سنة ${esc(r.year)} — ${esc(cur)}</div>
-      <div class="aw-rep-grid">
-        <div class="aw-rep-box"><span class="aw-rep-cap">وارد</span><span class="aw-rep-val in">${fmt(r.yinc)}</span></div>
-        <div class="aw-rep-box"><span class="aw-rep-cap">صادر</span><span class="aw-rep-val out">${fmt(r.yexp)}</span></div>
-        <div class="aw-rep-box"><span class="aw-rep-cap">الصافي</span><span class="aw-rep-val ${r.ynet<0?"out":"net"}">${fmt(r.ynet)}</span></div>
+    <section class="aw-card"><div class="aw-card-title">من وين إجا الدخل</div>${catRows(R.incCats,R.inc,"in")}</section>
+    <section class="aw-card"><div class="aw-card-title">وين راحت المصاريف</div>${catRows(R.expCats,R.exp,"")}</section>
+    <section class="aw-card"><div class="aw-card-title">المحافظ (الرصيد • وارد/صادر بالفترة)</div>${walletRows}</section>
+    <section class="aw-card"><div class="aw-card-title">الديون بهالفترة</div>
+      <div class="aw-rep-grid" style="margin-bottom:8px">
+        <div class="aw-rep-box"><span class="aw-rep-cap">إلك</span><span class="aw-rep-val in">${fmt(R.owedToMe)}</span></div>
+        <div class="aw-rep-box"><span class="aw-rep-cap">عليك</span><span class="aw-rep-val out">${fmt(R.iOwe)}</span></div>
       </div>
-    </section>
-    <button class="aw-btn primary aw-rep-pdf" data-act="exportPdf">📄 تصدير / طباعة PDF</button>`;
+      ${debtRows}</section>
+    <section class="aw-card"><div class="aw-card-title">الرواتب — إجمالي ${fmt(R.salTotal)} ${esc(cur)}</div>${salRows}</section>
+    <button class="aw-btn primary aw-rep-pdf" data-act="exportPdf">📄 تقرير مفصّل / طباعة PDF</button>`;
 }
 
 function printReport(){
-  const cur=state.activeCur, r=computeReport(cur);
+  const cur=state.activeCur;
+  const R=computeFullReport(cur);
   const line=(cap,val,cls)=>`<tr><td>${cap}</td><td class="${cls||''}">${fmt(val)} ${esc(cur)}</td></tr>`;
-  const top=r.top.map((row)=>{const i=catInfo(row.id);const p=r.exp?Math.round((row.a/r.exp)*100):0;return `<tr><td>${i.icon} ${esc(i.label)}</td><td>${fmt(row.a)} ${esc(cur)} (${p}%)</td></tr>`;}).join("") || `<tr><td colspan="2">—</td></tr>`;
-  const itop=(r.itop&&r.itop.length?r.itop:[]).map((row)=>{const i=catInfo(row.id);const p=r.inc?Math.round((row.a/r.inc)*100):0;return `<tr><td>${i.icon} ${esc(i.label)}</td><td>${fmt(row.a)} ${esc(cur)} (${p}%)</td></tr>`;}).join("") || `<tr><td colspan="2">—</td></tr>`;
-  let cmp="";
-  if(r.cmp && r.cmp.kind!=="none" && r.cmp.kind!=="same") cmp=`<p class="pp-note">المقارنة مع ${esc(r.prevName)}: صرفت ${r.cmp.up?"أكثر":"أقل"} بنسبة ${r.cmp.pct}%.</p>`;
+
+  const catTbl=(rows,total)=> rows.length ? rows.map((row)=>{ const i=catInfo(row.id); const pc=total?Math.round((row.a/total)*100):0;
+      return `<tr><td>${i.icon} ${esc(i.label)}</td><td>${fmt(row.a)} ${esc(cur)} (${pc}%)</td></tr>`; }).join("")
+    : `<tr><td colspan="2">—</td></tr>`;
+
+  const walTbl = R.wallets.length ? R.wallets.map((w)=>
+      `<tr><td>${esc(w.name)}</td><td>${fmt(w.balance)} ${esc(cur)}</td><td class="pp-in">+${fmt(w.inSum)}</td><td class="pp-out">−${fmt(w.outSum)}</td></tr>`).join("")
+    : `<tr><td colspan="4">—</td></tr>`;
+
+  const txTbl = R.txs.length ? R.txs.map((t)=>{ const i=catInfo(t.category); const wn=t.walletId?(walletName(t.walletId)||""):"";
+      return `<tr>
+        <td>${esc(t.date)}${t.time?" "+esc(fmtTime(t.time)):""}</td>
+        <td>${esc(i.label)}</td>
+        <td>${t.account==="work"?"شغل":"شخصي"}</td>
+        <td>${esc(wn)}</td>
+        <td class="${t.type==="income"?"pp-in":"pp-out"}">${t.type==="income"?"+":"−"}${fmt(t.amount)}</td>
+        <td>${esc(t.note||"")}</td>
+      </tr>`; }).join("")
+    : `<tr><td colspan="6">—</td></tr>`;
+
+  const debtTbl = R.debtPeople.length ? R.debtPeople.map((d)=>{ const rem=Math.max(0,d.amount-d.paid);
+      return `<tr><td>${esc(d.name)}</td><td>${d.type==="owed_to_me"?"إلك":"عليك"}</td><td>${fmt(d.amount)}</td><td>${fmt(d.paid)}</td><td class="${rem>0?"pp-out":"pp-in"}">${rem>0?fmt(rem):"مسدّد"}</td></tr>`; }).join("")
+    : `<tr><td colspan="5">—</td></tr>`;
+
+  const salTbl = R.salByEmp.length ? R.salByEmp.map((e)=>
+      `<tr><td>${esc(e.name)}</td><td>${e.count}</td><td class="pp-out">${fmt(e.total)} ${esc(cur)}</td></tr>`).join("")
+    : `<tr><td colspan="3">—</td></tr>`;
+
   const doc = `<div class="aw-print-doc">
-      <div class="pp-head"><div class="pp-lab">مختبر الوتين الطبي</div><div class="pp-sub">دفتر الحسابات — تقرير مالي • ${esc(todayStr())} • العملة: ${esc(cur)}</div></div>
-      <h2 class="pp-h">ملخص ${esc(r.monthName)} ${esc(r.mKey.slice(0,4))}</h2>
-      <table class="pp-tbl">${line("وارد",r.inc,"pp-in")}${line("صادر",r.exp,"pp-out")}${line("الصافي",r.net,r.net<0?"pp-out":"pp-in")}</table>
-      ${cmp}
-      <h2 class="pp-h">من وين إجا الدخل</h2><table class="pp-tbl">${itop}</table>
-      <h2 class="pp-h">أكتر التصنيفات صرفاً</h2><table class="pp-tbl">${top}</table>
-      <h2 class="pp-h">ملخص سنة ${esc(r.year)}</h2>
-      <table class="pp-tbl">${line("وارد",r.yinc,"pp-in")}${line("صادر",r.yexp,"pp-out")}${line("الصافي",r.ynet,r.ynet<0?"pp-out":"pp-in")}</table>
+      <div class="pp-head"><div class="pp-lab">مختبر الوتين الطبي</div>
+        <div class="pp-sub">دفتر الحسابات — تقرير مالي مفصّل</div>
+        <div class="pp-sub">الفترة: ${esc(R.p.from)} ← ${esc(R.p.to)} • العملة: ${esc(cur)} • تاريخ الطباعة: ${esc(todayStr())}</div></div>
+
+      <h2 class="pp-h">١. الملخص العام</h2>
+      <table class="pp-tbl">
+        ${line("إجمالي الوارد",R.inc,"pp-in")}
+        ${line("إجمالي الصادر",R.exp,"pp-out")}
+        ${line("الصافي",R.net,R.net<0?"pp-out":"pp-in")}
+        <tr><td>عدد الحركات</td><td>${R.txs.length}</td></tr>
+      </table>
+      <p class="pp-note">ملاحظة: حركات الديون (إعطاء/تحصيل/تسديد) مستثناة من حساب الوارد والصادر، لأنها مش دخل ولا مصروف حقيقي — بس بتأثر على أرصدة المحافظ.</p>
+
+      <h2 class="pp-h">٢. من وين إجا الدخل</h2>
+      <table class="pp-tbl"><tr><th>البند</th><th>المبلغ</th></tr>${catTbl(R.incCats,R.inc)}</table>
+
+      <h2 class="pp-h">٣. وين راحت المصاريف</h2>
+      <table class="pp-tbl"><tr><th>البند</th><th>المبلغ</th></tr>${catTbl(R.expCats,R.exp)}</table>
+
+      <h2 class="pp-h">٤. المحافظ والحسابات</h2>
+      <table class="pp-tbl"><tr><th>المحفظة</th><th>الرصيد الحالي</th><th>وارد بالفترة</th><th>صادر بالفترة</th></tr>${walTbl}</table>
+
+      <h2 class="pp-h">٥. الديون</h2>
+      <table class="pp-tbl">
+        ${line("إجمالي إلك عند الناس",R.owedToMe,"pp-in")}
+        ${line("إجمالي عليك للناس",R.iOwe,"pp-out")}
+      </table>
+      <table class="pp-tbl"><tr><th>الشخص</th><th>النوع</th><th>المبلغ</th><th>المسدّد</th><th>الباقي</th></tr>${debtTbl}</table>
+
+      <h2 class="pp-h">٦. الرواتب — إجمالي ${fmt(R.salTotal)} ${esc(cur)}</h2>
+      <table class="pp-tbl"><tr><th>الموظف</th><th>عدد الدفعات</th><th>الإجمالي</th></tr>${salTbl}</table>
+
+      <h2 class="pp-h">٧. كل الحركات (${R.txs.length})</h2>
+      <table class="pp-tbl pp-tbl-sm"><tr><th>التاريخ</th><th>البند</th><th>الحساب</th><th>المحفظة</th><th>المبلغ</th><th>ملاحظة</th></tr>${txTbl}</table>
+
       <div class="pp-foot">تم تطوير هذا البرنامج بواسطة مختبر الوتين الطبي</div>
     </div>`;
   const ov=document.createElement("div");
@@ -851,6 +998,8 @@ function attachHandlers() {
 
   a.querySelectorAll("[data-act]").forEach((b)=>b.onclick=(e)=>{
     const act=b.dataset.act;
+    if (act==="openRange") openRangeModal();
+    if (act==="clearRange") { state.range=null; render(); }
     if (act==="add") { if(state.tab==="accounts")openTxModal(); else if(state.tab==="wallets")openWalletModal(null); else if(state.tab==="salaries")openEmployeeModal(); else openDebtModal(); }
     else if (act==="settings") openSettings();
     else if (act==="activate") openActivate();
@@ -1189,6 +1338,52 @@ function openTxModal(editing) {
 }
 
 /* --- محفظة --- */
+function openRangeModal(onDone){
+  const t = todayStr();
+  const cur = state.range || { from: state.viewMonth+"-01", to: t };
+  const body = `
+    <div class="aw-mini-hint" style="margin-bottom:10px">اختر فترة جاهزة أو حدّد التواريخ يدوياً.</div>
+    <div class="aw-preset-grid">
+      <button class="aw-preset" data-preset="7">آخر 7 أيام</button>
+      <button class="aw-preset" data-preset="30">آخر 30 يوم</button>
+      <button class="aw-preset" data-preset="90">آخر 3 شهور</button>
+      <button class="aw-preset" data-preset="thisMonth">هذا الشهر</button>
+      <button class="aw-preset" data-preset="lastMonth">الشهر الماضي</button>
+      <button class="aw-preset" data-preset="thisYear">هذي السنة</button>
+      <button class="aw-preset" data-preset="all">كل الفترات</button>
+    </div>
+    <label class="aw-field-label">من تاريخ</label>
+    <input class="aw-input" id="rgFrom" type="date" value="${esc(cur.from)}">
+    <label class="aw-field-label">إلى تاريخ</label>
+    <input class="aw-input" id="rgTo" type="date" value="${esc(cur.to)}">
+    <div class="aw-sheet-actions">
+      ${state.range?`<button class="aw-btn ghost" id="rgClear">إلغاء الفترة</button>`:`<button class="aw-btn ghost" id="rgCancel">إلغاء</button>`}
+      <button class="aw-btn primary" id="rgApply">عرض</button>
+    </div>`;
+  const m = modalShell("📅 بحث بفترة", body);
+  const s = m.sheet;
+  const fromI=s.querySelector("#rgFrom"), toI=s.querySelector("#rgTo");
+  function shift(days){ const d=new Date(); d.setDate(d.getDate()-days); return d.toISOString().slice(0,10); }
+  s.querySelectorAll("[data-preset]").forEach((b)=>b.onclick=()=>{
+    const p=b.dataset.preset;
+    if(p==="7"||p==="30"||p==="90"){ fromI.value=shift(parseInt(p,10)); toI.value=t; }
+    else if(p==="thisMonth"){ fromI.value=monthKeyOf(t)+"-01"; toI.value=t; }
+    else if(p==="lastMonth"){ const d=new Date(); d.setDate(1); d.setMonth(d.getMonth()-1); const st=d.toISOString().slice(0,10);
+      const e=new Date(d.getFullYear(), d.getMonth()+1, 0); fromI.value=st; toI.value=e.toISOString().slice(0,10); }
+    else if(p==="thisYear"){ fromI.value=t.slice(0,4)+"-01-01"; toI.value=t; }
+    else if(p==="all"){ const all=state.transactions.map((x)=>x.date).concat(state.debts.map((x)=>x.date)).filter(Boolean).sort();
+      fromI.value=all[0]||("2020-01-01"); toI.value=t; }
+    s.querySelectorAll("[data-preset]").forEach((x)=>x.classList.toggle("on", x===b));
+  });
+  s.querySelector("#rgApply").onclick=()=>{ let from=fromI.value, to=toI.value; if(!from||!to)return;
+    if(from>to){ const tmp=from; from=to; to=tmp; }
+    state.range={from,to}; m.close(); render(); if(onDone) onDone();
+  };
+  const clr=s.querySelector("#rgClear"); if(clr) clr.onclick=()=>{ state.range=null; m.close(); render(); if(onDone) onDone(); };
+  const cnl=s.querySelector("#rgCancel"); if(cnl) cnl.onclick=m.close;
+}
+
+function openRangeModal_end(){}
 function openKeygenModal(){
   let plan="M";
   const body = `

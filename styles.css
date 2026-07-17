@@ -364,3 +364,16 @@ body{font-family:-apple-system,"SF Arabic","Segoe UI",system-ui,sans-serif;backg
 
 /* وقت الحركة */
 .aw-time{opacity:.75;font-size:11px;margin-inline-start:2px;}
+
+/* البحث بفترة */
+.aw-range-btn{background:var(--surface);border:1px solid var(--line);border-radius:10px;width:38px;height:34px;font-size:16px;cursor:pointer;margin-inline-start:6px;}
+.aw-range-btn:active{background:var(--card-soft);}
+.aw-range-bar{display:flex;align-items:center;justify-content:space-between;gap:8px;background:var(--card-soft);border:1px solid var(--accent);border-radius:12px;padding:10px 12px;margin-bottom:12px;}
+.aw-range-txt{font-size:14px;font-weight:700;color:var(--ink);}
+.aw-range-clear{background:none;border:none;color:var(--expense);font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;}
+.aw-preset-grid{display:flex;flex-wrap:wrap;gap:7px;margin-bottom:6px;}
+.aw-preset{flex:1 1 30%;padding:10px 6px;background:var(--surface);border:1.5px solid var(--line);border-radius:10px;color:var(--ink-soft);font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;}
+.aw-preset.on{border-color:var(--accent);color:var(--ink);background:var(--card-soft);}
+/* جدول الطباعة المفصّل */
+.pp-tbl th{background:#f0f2f1;font-weight:700;font-size:12px;padding:6px;text-align:start;border-bottom:1px solid #ddd;}
+.pp-tbl-sm td,.pp-tbl-sm th{font-size:10px;padding:4px;}
