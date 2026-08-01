@@ -300,7 +300,7 @@ function render() {
   attachHandlers();
 }
 
-function creditHTML(){ return `<div class="aw-credit">تم تطوير هذا البرنامج بواسطة مختبر الوتين الطبي 🔬</div>`; }
+function creditHTML(){ return `<div class="aw-credit">تم التصميم بواسطة Mohammed R Alholi</div>`; }
 
 const WELCOME_KEY = "daftar-welcomed-v1";
 function isStandalone(){ try{ return (window.navigator.standalone===true) || (window.matchMedia && window.matchMedia("(display-mode: standalone)").matches); }catch(e){ return false; } }
@@ -321,7 +321,7 @@ function openWelcome(){
       </ol>
     </div>`}
     <button class="aw-btn primary aw-welcome-btn" id="wlcStart">${standalone ? "يلا نبدأ" : "تمام، فهمت"}</button>
-    <div class="aw-credit">تم تطوير هذا البرنامج بواسطة مختبر الوتين الطبي 🔬</div>
+    <div class="aw-credit">تم التصميم بواسطة Mohammed R Alholi</div>
   </div>`;
   document.body.appendChild(ov);
   ov.querySelector("#wlcStart").onclick=()=>{ try{localStorage.setItem(WELCOME_KEY,"1");}catch(e){} ov.remove(); };
@@ -379,7 +379,7 @@ function lockHTML(kind){
       <button class="aw-btn primary aw-lock-btn" data-locksub>${renew?"جدّد الآن":"اشترك الآن"}</button>
       <button class="aw-lock-link" data-lockact>عندي كود — تفعيل</button>
     </section>
-    <div class="aw-credit">تم تطوير هذا البرنامج بواسطة مختبر الوتين الطبي 🔬</div>`;
+    <div class="aw-credit">تم التصميم بواسطة Mohammed R Alholi</div>`;
 }
 function openSubscribe(){
   let sel = PAY.plans.findIndex((p)=>p.best); if(sel<0) sel=PAY.plans.length-1;
@@ -772,7 +772,7 @@ function printDebtStatement(name, type){
   const title = mine ? "كشف حساب — مستحقات لنا" : "كشف حساب — مستحقات علينا";
   const relation = mine ? `المبلغ المطلوب من ${esc(name)}` : `المبلغ المستحق لـ ${esc(name)}`;
   const doc = `<div class="aw-print-doc">
-      <div class="pp-head"><div class="pp-lab">مختبر الوتين الطبي</div>
+      <div class="pp-head"><div class="pp-lab">دفتر الحسابات</div>
         <div class="pp-sub">${title}</div>
         <div class="pp-sub">الاسم: ${esc(name)} • العملة: ${esc(cur)} • تاريخ الكشف: ${esc(todayStr())}</div></div>
 
@@ -789,7 +789,7 @@ function printDebtStatement(name, type){
       ${paySection}
 
       <p class="pp-note">هذا الكشف صادر إلكترونياً من تطبيق دفتر الحسابات بتاريخ ${esc(todayStr())}.</p>
-      <div class="pp-foot">مختبر الوتين الطبي — دفتر الحسابات</div>
+      <div class="pp-foot">تم التصميم بواسطة Mohammed R Alholi</div>
     </div>`;
   const ov=document.createElement("div"); ov.className="aw-print-ov";
   ov.innerHTML=`<div class="aw-print-bar noprint"><button class="aw-btn primary" id="ppPrint">طباعة / حفظ PDF</button><button class="aw-btn ghost" id="ppClose">إغلاق</button></div>`+doc;
@@ -971,7 +971,7 @@ function printReport(){
     : `<tr><td colspan="3">—</td></tr>`;
 
   const doc = `<div class="aw-print-doc">
-      <div class="pp-head"><div class="pp-lab">مختبر الوتين الطبي</div>
+      <div class="pp-head"><div class="pp-lab">دفتر الحسابات</div>
         <div class="pp-sub">دفتر الحسابات — تقرير مالي مفصّل</div>
         <div class="pp-sub">الفترة: ${esc(R.p.from)} ← ${esc(R.p.to)} • العملة: ${esc(cur)} • تاريخ الطباعة: ${esc(todayStr())}</div></div>
 
@@ -1006,7 +1006,7 @@ function printReport(){
       <h2 class="pp-h">٧. كل الحركات (${R.txs.length})</h2>
       <table class="pp-tbl pp-tbl-sm"><tr><th>التاريخ</th><th>البند</th><th>الحساب</th><th>المحفظة</th><th>المبلغ</th><th>ملاحظة</th></tr>${txTbl}</table>
 
-      <div class="pp-foot">تم تطوير هذا البرنامج بواسطة مختبر الوتين الطبي</div>
+      <div class="pp-foot">تم التصميم بواسطة Mohammed R Alholi</div>
     </div>`;
   const ov=document.createElement("div");
   ov.className="aw-print-ov";
@@ -1071,10 +1071,13 @@ function attachHandlers() {
 function modalShell(titleHtml, bodyHtml) {
   const ov = document.createElement("div");
   ov.className = "aw-overlay";
-  ov.innerHTML = `<div class="aw-sheet"><div class="aw-sheet-handle"></div><div class="aw-sheet-title">${titleHtml}</div>${bodyHtml}</div>`;
+  ov.innerHTML = `<div class="aw-sheet"><div class="aw-sheet-handle"></div>
+    <button class="aw-sheet-x" aria-label="إغلاق">✕</button>
+    <div class="aw-sheet-title">${titleHtml}</div>${bodyHtml}</div>`;
   ov.onclick = (e)=>{ if(e.target===ov) close(); };
   function close(){ ov.remove(); }
   document.body.appendChild(ov);
+  const xb = ov.querySelector(".aw-sheet-x"); if(xb) xb.onclick = close;
   return { ov, sheet: ov.querySelector(".aw-sheet"), close };
 }
 function curPickerHTML(value, id){ return `<div class="aw-cur-pick" data-curpick="${id}">`+CURRENCIES.map((c)=>`<button class="aw-cur-pick-btn ${value===c.sym?"on":""}" data-cv="${esc(c.sym)}"><span class="aw-cur-pick-sym">${esc(c.sym)}</span><span class="aw-cur-pick-name">${esc(c.name)}</span></button>`).join("")+`</div>`; }

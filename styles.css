@@ -377,3 +377,12 @@ body{font-family:-apple-system,"SF Arabic","Segoe UI",system-ui,sans-serif;backg
 /* جدول الطباعة المفصّل */
 .pp-tbl th{background:#f0f2f1;font-weight:700;font-size:12px;padding:6px;text-align:start;border-bottom:1px solid #ddd;}
 .pp-tbl-sm td,.pp-tbl-sm th{font-size:10px;padding:4px;}
+
+/* زر إغلاق (✕) فوق بكل الشاشات */
+.aw-sheet{position:relative;}
+.aw-sheet-x{position:absolute;top:12px;inset-inline-end:14px;width:34px;height:34px;border-radius:50%;
+  background:var(--card-soft);border:1px solid var(--line);color:var(--ink-soft);
+  font-size:15px;font-weight:700;line-height:1;cursor:pointer;font-family:inherit;z-index:5;
+  display:flex;align-items:center;justify-content:center;}
+.aw-sheet-x:active{background:var(--line);color:var(--ink);}
+.aw-sheet-title{padding-inline-end:44px;}
