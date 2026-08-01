@@ -733,13 +733,69 @@ function openPersonModal(name, type){
           </div>`; }).join("")}
       </div>
       <button class="aw-btn primary aw-person-add" id="personAdd">➕ دين جديد على ${esc(name)}</button>
+      <button class="aw-btn" id="personStatement" style="width:100%;margin-top:8px">🧾 كشف حساب / فاتورة PDF</button>
       <div class="aw-sheet-actions"><button class="aw-btn ghost" id="personClose">إغلاق</button></div>`;
     body.querySelectorAll("[data-ppay]").forEach((b)=>b.onclick=()=>{ const d=state.debts.find((x)=>x.id===b.dataset.ppay); if(d) openPayModal(d, draw); });
     body.querySelectorAll("[data-pdel]").forEach((b)=>b.onclick=()=>confirmDialog("حذف هذا الدَّين؟", ()=>{ state.debts=state.debts.filter((x)=>x.id!==b.dataset.pdel); save(); render(); draw(); }));
     body.querySelector("#personAdd").onclick=()=> openDebtModal({name, type, cur:state.activeCur}, draw);
+    body.querySelector("#personStatement").onclick=()=> printDebtStatement(name, type);
     body.querySelector("#personClose").onclick=()=>{ m.close(); render(); };
   }
   draw();
+}
+
+function printDebtStatement(name, type){
+  const mine = type==="owed_to_me";
+  const cur = state.activeCur;
+  const items = state.debts
+    .filter((d)=>d.cur===cur && d.type===type && normName(d.name)===normName(name))
+    .sort((a,b)=>a.date<b.date?-1:1);
+  let amount=0, paid=0; items.forEach((d)=>{amount+=d.amount;paid+=(d.paid||0);});
+  const rem=Math.max(0,amount-paid);
+  // حركات التسديد المرتبطة (تحصيل/تسديد لنفس الشخص)
+  const payCat = mine?"debt_collect":"debt_payment";
+  const pays = state.transactions.filter((t)=>t.category===payCat && (t.note||"").indexOf(name)>=0)
+    .sort((a,b)=>a.date<b.date?-1:1);
+
+  const rows = items.map((d)=>{ const r=Math.max(0,d.amount-(d.paid||0)); const st=(d.paid||0)>=d.amount;
+    return `<tr>
+      <td>${esc(d.date)}</td>
+      <td>${fmt(d.amount)} ${esc(cur)}</td>
+      <td>${fmt(d.paid||0)} ${esc(cur)}</td>
+      <td class="${st?"pp-in":"pp-out"}">${st?"مسدّد":fmt(r)+" "+esc(cur)}</td>
+      <td>${esc(d.note||"")}</td>
+    </tr>`; }).join("") || `<tr><td colspan="5">—</td></tr>`;
+
+  const payRows = pays.length ? pays.map((t)=>`<tr><td>${esc(t.date)}${t.time?" "+esc(fmtTime(t.time)):""}</td><td>${fmt(t.amount)} ${esc(cur)}</td></tr>`).join("") : "";
+  const paySection = pays.length ? `<h2 class="pp-h">الدفعات المسجّلة</h2><table class="pp-tbl"><tr><th>التاريخ</th><th>المبلغ</th></tr>${payRows}</table>` : "";
+
+  const title = mine ? "كشف حساب — مستحقات لنا" : "كشف حساب — مستحقات علينا";
+  const relation = mine ? `المبلغ المطلوب من ${esc(name)}` : `المبلغ المستحق لـ ${esc(name)}`;
+  const doc = `<div class="aw-print-doc">
+      <div class="pp-head"><div class="pp-lab">مختبر الوتين الطبي</div>
+        <div class="pp-sub">${title}</div>
+        <div class="pp-sub">الاسم: ${esc(name)} • العملة: ${esc(cur)} • تاريخ الكشف: ${esc(todayStr())}</div></div>
+
+      <h2 class="pp-h">الملخص</h2>
+      <table class="pp-tbl">
+        <tr><td>إجمالي الدين</td><td>${fmt(amount)} ${esc(cur)}</td></tr>
+        <tr><td>المسدّد</td><td class="pp-in">${fmt(paid)} ${esc(cur)}</td></tr>
+        <tr><td><b>${relation}</b></td><td class="${rem>0?"pp-out":"pp-in"}"><b>${rem>0?fmt(rem)+" "+esc(cur):"مسدّد بالكامل ✓"}</b></td></tr>
+      </table>
+
+      <h2 class="pp-h">تفاصيل الديون</h2>
+      <table class="pp-tbl"><tr><th>التاريخ</th><th>المبلغ</th><th>المسدّد</th><th>الباقي</th><th>ملاحظة</th></tr>${rows}</table>
+
+      ${paySection}
+
+      <p class="pp-note">هذا الكشف صادر إلكترونياً من تطبيق دفتر الحسابات بتاريخ ${esc(todayStr())}.</p>
+      <div class="pp-foot">مختبر الوتين الطبي — دفتر الحسابات</div>
+    </div>`;
+  const ov=document.createElement("div"); ov.className="aw-print-ov";
+  ov.innerHTML=`<div class="aw-print-bar noprint"><button class="aw-btn primary" id="ppPrint">طباعة / حفظ PDF</button><button class="aw-btn ghost" id="ppClose">إغلاق</button></div>`+doc;
+  document.body.appendChild(ov);
+  ov.querySelector("#ppPrint").onclick=()=>{ try{ window.print(); }catch(e){} };
+  ov.querySelector("#ppClose").onclick=()=>ov.remove();
 }
 
 /* ----- تبويب التقارير ----- */
