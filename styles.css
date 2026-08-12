@@ -386,3 +386,11 @@ body{font-family:-apple-system,"SF Arabic","Segoe UI",system-ui,sans-serif;backg
   display:flex;align-items:center;justify-content:center;}
 .aw-sheet-x:active{background:var(--line);color:var(--ink);}
 .aw-sheet-title{padding-inline-end:44px;}
+
+/* سجل الدفعات داخل صفحة الشخص */
+.aw-pays{margin-top:10px;padding-top:10px;border-top:1px dashed var(--line);}
+.aw-pays-h{font-size:12px;color:var(--ink-soft);font-weight:700;margin-bottom:6px;}
+.aw-pay-row{display:flex;align-items:center;gap:8px;padding:6px 8px;background:var(--card-soft);border-radius:9px;margin-bottom:5px;}
+.aw-pay-amt{font-size:13px;font-weight:800;color:var(--income);white-space:nowrap;font-variant-numeric:tabular-nums;}
+.aw-pay-meta{flex:1;font-size:11px;color:var(--ink-soft);line-height:1.6;}
+.aw-pay-del{background:none;border:none;color:var(--expense);font-size:13px;font-weight:700;cursor:pointer;padding:2px 6px;font-family:inherit;}

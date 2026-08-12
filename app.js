@@ -730,12 +730,30 @@ function openPersonModal(name, type){
               ${!st?`<button class="aw-pay" data-ppay="${d.id}">سدّد</button>`:""}
               <button class="aw-del" data-pdel="${d.id}" aria-label="حذف">🗑</button>
             </div>
+            ${(d.pays&&d.pays.length)?`<div class="aw-pays">
+              <div class="aw-pays-h">الدفعات (${d.pays.length})</div>
+              ${d.pays.slice().sort((x,y)=>x.date<y.date?1:-1).map((pp)=>`<div class="aw-pay-row">
+                <span class="aw-pay-amt">${fmt(pp.amount)} ${esc(d.cur)}</span>
+                <span class="aw-pay-meta">${esc(pp.date)}${pp.time?" "+esc(fmtTime(pp.time)):""}${pp.note?" • "+esc(pp.note):""}</span>
+                <button class="aw-pay-del" data-paydel="${d.id}|${pp.id}" aria-label="حذف الدفعة">✕</button>
+              </div>`).join("")}
+            </div>`:""}
           </div>`; }).join("")}
       </div>
       <button class="aw-btn primary aw-person-add" id="personAdd">➕ دين جديد على ${esc(name)}</button>
       <button class="aw-btn" id="personStatement" style="width:100%;margin-top:8px">🧾 كشف حساب / فاتورة PDF</button>
       <div class="aw-sheet-actions"><button class="aw-btn ghost" id="personClose">إغلاق</button></div>`;
     body.querySelectorAll("[data-ppay]").forEach((b)=>b.onclick=()=>{ const d=state.debts.find((x)=>x.id===b.dataset.ppay); if(d) openPayModal(d, draw); });
+    body.querySelectorAll("[data-paydel]").forEach((b)=>b.onclick=()=>{
+      const [did,pid]=b.dataset.paydel.split("|");
+      confirmDialog("حذف هذه الدفعة؟ رح يرجع المبلغ للدين.", ()=>{
+        state.debts=state.debts.map((d)=>{ if(d.id!==did) return d;
+          const pp=(d.pays||[]).find((x)=>x.id===pid); if(!pp) return d;
+          return {...d, paid: Math.max(0,(d.paid||0)-pp.amount), pays:(d.pays||[]).filter((x)=>x.id!==pid)};
+        });
+        save(); render(); draw();
+      });
+    });
     body.querySelectorAll("[data-pdel]").forEach((b)=>b.onclick=()=>confirmDialog("حذف هذا الدَّين؟", ()=>{ state.debts=state.debts.filter((x)=>x.id!==b.dataset.pdel); save(); render(); draw(); }));
     body.querySelector("#personAdd").onclick=()=> openDebtModal({name, type, cur:state.activeCur}, draw);
     body.querySelector("#personStatement").onclick=()=> printDebtStatement(name, type);
@@ -766,8 +784,14 @@ function printDebtStatement(name, type){
       <td>${esc(d.note||"")}</td>
     </tr>`; }).join("") || `<tr><td colspan="5">—</td></tr>`;
 
-  const payRows = pays.length ? pays.map((t)=>`<tr><td>${esc(t.date)}${t.time?" "+esc(fmtTime(t.time)):""}</td><td>${fmt(t.amount)} ${esc(cur)}</td></tr>`).join("") : "";
-  const paySection = pays.length ? `<h2 class="pp-h">الدفعات المسجّلة</h2><table class="pp-tbl"><tr><th>التاريخ</th><th>المبلغ</th></tr>${payRows}</table>` : "";
+  // الدفعات المسجّلة على الديون نفسها (مع ملاحظاتها)
+  const allPays=[];
+  items.forEach((d)=>{ (d.pays||[]).forEach((pp)=>allPays.push({...pp, cur:d.cur})); });
+  allPays.sort((a,b)=>a.date<b.date?-1:1);
+  const payRows = allPays.length
+    ? allPays.map((pp)=>`<tr><td>${esc(pp.date)}${pp.time?" "+esc(fmtTime(pp.time)):""}</td><td>${fmt(pp.amount)} ${esc(cur)}</td><td>${esc(pp.note||"")}</td></tr>`).join("")
+    : (pays.length ? pays.map((t)=>`<tr><td>${esc(t.date)}${t.time?" "+esc(fmtTime(t.time)):""}</td><td>${fmt(t.amount)} ${esc(cur)}</td><td>${esc(t.note||"")}</td></tr>`).join("") : "");
+  const paySection = payRows ? `<h2 class="pp-h">الدفعات المسجّلة</h2><table class="pp-tbl"><tr><th>التاريخ</th><th>المبلغ</th><th>ملاحظة</th></tr>${payRows}</table>` : "";
 
   const title = mine ? "كشف حساب — مستحقات لنا" : "كشف حساب — مستحقات علينا";
   const relation = mine ? `المبلغ المطلوب من ${esc(name)}` : `المبلغ المستحق لـ ${esc(name)}`;
@@ -1627,6 +1651,8 @@ function openPayModal(debt, onDone) {
       ${ws.map((w)=>`<button class="aw-wpick-btn" data-w="${w.id}"><span>${walletIcon(w.name)}</span>${esc(w.name)}</button>`).join("")}
       <button class="aw-wpick-btn on" data-w="">بدون محفظة</button>
     </div>
+    <label class="aw-field-label">ملاحظة (اختياري)</label>
+    <input class="aw-input" id="pNote" type="text" placeholder="مثلاً: أخذ من الأمانة، دفعة أولى...">
     <div class="aw-sheet-actions"><button class="aw-btn ghost" id="pCancel">إلغاء</button><button class="aw-btn primary" id="pSave">تسجيل</button></div>`;
   const m = modalShell("تسديد — "+esc(debt.name), body);
   const s = m.sheet;
@@ -1634,11 +1660,16 @@ function openPayModal(debt, onDone) {
   s.querySelector("#pCancel").onclick=m.close;
   s.querySelector("#pSave").onclick=()=>{
     let amt=parseFloat(s.querySelector("#pAmount").value); if(!(amt>0))return; amt=Math.min(rem,amt);
-    state.debts = state.debts.map((d)=> d.id===debt.id ? {...d, paid: Math.min(d.amount,(d.paid||0)+amt)} : d);
+    const pnote=(s.querySelector("#pNote").value||"").trim();
+    const entry={ id:uid(), amount:amt, date:todayStr(), time:nowTime(), note:pnote, walletId:walletId||null };
+    state.debts = state.debts.map((d)=> d.id===debt.id
+      ? {...d, paid: Math.min(d.amount,(d.paid||0)+amt), pays: (d.pays||[]).concat([entry]) }
+      : d);
     if (walletId) {
       state.transactions.push({ id:uid(), type: mine?"income":"expense", amount:amt, cur:debt.cur,
         category: mine?"debt_collect":"debt_payment", account:"personal", walletId,
-        date:todayStr(), time:nowTime(), note:(mine?"تحصيل من ":"تسديد لـ ")+debt.name });
+        date:todayStr(), time:nowTime(),
+        note:(mine?"تحصيل من ":"تسديد لـ ")+debt.name+(pnote?" — "+pnote:"") });
     }
     save(); m.close(); render(); if(onDone) onDone();
   };
