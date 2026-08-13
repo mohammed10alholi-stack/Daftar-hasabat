@@ -407,6 +407,29 @@ body{font-family:-apple-system,"SF Arabic","Segoe UI",system-ui,sans-serif;backg
 .aw-pay-amt{font-size:13px;font-weight:800;color:var(--income);white-space:nowrap;font-variant-numeric:tabular-nums;}
 .aw-pay-meta{flex:1;font-size:11px;color:var(--ink-soft);line-height:1.6;}
 .aw-pay-del{background:none;border:none;color:var(--expense);font-size:13px;font-weight:700;cursor:pointer;padding:2px 6px;font-family:inherit;}
+
+/* تحويل بين المحافظ + المطابقة */
+.aw-transfer-btn{width:100%;margin-bottom:12px;}
+.aw-wpick-btn.dim{opacity:.35;}
+
+/* مطابقة كشف البنك */
+.aw-mt-grid{display:flex;gap:8px;margin-bottom:6px;}
+.aw-mt-box{flex:1;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:10px 6px;text-align:center;}
+.aw-mt-box span{display:block;font-size:11px;color:var(--ink-soft);margin-bottom:4px;}
+.aw-mt-box b{font-size:16px;font-variant-numeric:tabular-nums;}
+.aw-mt-box b.in{color:var(--income);}
+.aw-mt-box b.out{color:var(--expense);}
+.aw-mt-list{max-height:340px;overflow-y:auto;-webkit-overflow-scrolling:touch;}
+.aw-mt-row{display:flex;align-items:center;gap:10px;padding:10px;background:var(--surface);border:1px solid var(--line);
+  border-radius:11px;margin-bottom:6px;cursor:pointer;}
+.aw-mt-row.on{background:var(--card-soft);border-color:var(--income);}
+.aw-mt-cb{width:22px;height:22px;accent-color:var(--income);flex-shrink:0;}
+.aw-mt-main{flex:1;min-width:0;}
+.aw-mt-top{display:flex;align-items:center;justify-content:space-between;gap:8px;}
+.aw-mt-amt{font-size:15px;font-weight:800;font-variant-numeric:tabular-nums;}
+.aw-mt-amt.in{color:var(--income);} .aw-mt-amt.out{color:var(--expense);}
+.aw-mt-cat{font-size:13px;font-weight:700;color:var(--ink);}
+.aw-mt-sub{display:block;font-size:11px;color:var(--ink-soft);margin-top:3px;line-height:1.6;}
 </style></head><body>
 <div id="app" class="aw-root"><div class="aw-loading">جاري التحميل…</div></div>
 <script>
@@ -439,12 +462,17 @@ const DEFAULT_EXPENSE_CATS = [
   { id: "other_out", label: "أخرى", icon: "•" },
 ];
 const DEBT_CATS = ["debt_lend","debt_borrow","debt_collect","debt_payment"];
-function isDebtTx(t){ return DEBT_CATS.indexOf(t.category)>=0; }
+const NEUTRAL_CATS = DEBT_CATS.concat(["transfer_out","transfer_in","adjust_up","adjust_down"]);
+function isDebtTx(t){ return NEUTRAL_CATS.indexOf(t.category)>=0; }
 const EXTRA_CATS = [
   { id: "debt_payment", label: "تسديد دَين", icon: "📌" },
   { id: "debt_collect", label: "تحصيل دَين", icon: "🤝" },
   { id: "debt_lend", label: "دَين أعطيته", icon: "🤝" },
   { id: "debt_borrow", label: "دَين أخذته", icon: "📌" },
+  { id: "transfer_out", label: "تحويل صادر", icon: "🔄" },
+  { id: "transfer_in", label: "تحويل وارد", icon: "🔄" },
+  { id: "adjust_down", label: "تسوية (نقص)", icon: "⚖️" },
+  { id: "adjust_up", label: "تسوية (زيادة)", icon: "⚖️" },
 ];
 const LEGACY_CATS = { lab_supplies: { label: "مصاريف الشغل", icon: "🏢" } };
 const EMOJIS = ["🍽️","🚗","🧾","💊","🛍️","🏠","👨‍👩‍👧","🏢","🔧","💼","🔬","🧰","🎁","💰","📱","🏦","👛","📦","⚡","🚌","☕","🍞","👶","🎓","🩺","🛒","🧹","🔌","✈️","🎉","➕","•"];
@@ -1020,6 +1048,7 @@ function walletsHTML() {
       <div class="aw-balance pos"><span class="aw-cur-sym">${esc(state.activeCur)}</span><span class="aw-balance-num">${fmt(total)}</span></div>
       <div class="aw-ledger-hint">مجموع أرصدة محافظك بهالعملة (محدّثة مع كل حركة)</div>
     </section>
+    ${ws.length>=2?`<button class="aw-btn primary aw-transfer-btn" data-act="transfer">🔄 تحويل بين المحافظ</button>`:""}
     <section class="aw-list"><div class="aw-list-head"><span>المحافظ والحسابات</span><span class="aw-list-count">${ws.length}</span></div>`;
   if (!ws.length) {
     html += `<div class="aw-empty">ما في محافظ بعملة ${esc(state.activeCur)} بعد.<br>اضغط <b>+</b> تحت لتضيف بنك فلسطين، المحفظة، إلخ.</div>`;
@@ -1490,6 +1519,7 @@ function attachHandlers() {
 
   a.querySelectorAll("[data-act]").forEach((b)=>b.onclick=(e)=>{
     const act=b.dataset.act;
+    if (act==="transfer") openTransferModal();
     if (act==="openRange") openRangeModal();
     if (act==="clearRange") { state.range=null; render(); }
     if (act==="add") { if(state.tab==="accounts")openTxModal(); else if(state.tab==="wallets")openWalletModal(null); else if(state.tab==="salaries")openEmployeeModal(); else openDebtModal(); }
@@ -1925,6 +1955,160 @@ function openKeygenModal(){
 }
 
 function openKeygenModal_end(){}
+function openTransferModal(){
+  const cur = state.activeCur;
+  const ws = state.wallets.filter((w)=>w.cur===cur);
+  if(ws.length<2){ alert("بدك محفظتين على الأقل بنفس العملة."); return; }
+  let fromId = ws[0].id, toId = ws[1].id;
+  const body = `
+    <div class="aw-mini-hint" style="margin-bottom:10px">نقل فلوس بين محافظك. ما بينحسب صادر ولا وارد — بس بينقل الرصيد.</div>
+    <label class="aw-field-label">من محفظة</label>
+    <div class="aw-wallet-pick" id="trFrom"></div>
+    <label class="aw-field-label">إلى محفظة</label>
+    <div class="aw-wallet-pick" id="trTo"></div>
+    <label class="aw-field-label">المبلغ</label>
+    <div class="aw-amount-wrap"><span class="aw-amount-cur">${esc(cur)}</span>
+      <input class="aw-amount-input" id="trAmount" type="number" inputmode="decimal" placeholder="0" autofocus></div>
+    <div class="aw-net-line" id="trHint"></div>
+    <label class="aw-field-label">التاريخ</label>
+    <input class="aw-input" id="trDate" type="date" value="${todayStr()}">
+    <label class="aw-field-label">ملاحظة (اختياري)</label>
+    <input class="aw-input" id="trNote" type="text" placeholder="مثلاً: سحب من البنك">
+    <div class="aw-sheet-actions"><button class="aw-btn ghost" id="trCancel">إلغاء</button><button class="aw-btn primary" id="trSave">تحويل</button></div>`;
+  const m = modalShell("🔄 تحويل بين المحافظ", body);
+  const s = m.sheet;
+  function drawPicks(){
+    s.querySelector("#trFrom").innerHTML = ws.map((w)=>`<button class="aw-wpick-btn ${fromId===w.id?"on":""}" data-from="${w.id}"><span>${walletIcon(w.name)}</span>${esc(w.name)}</button>`).join("");
+    s.querySelector("#trTo").innerHTML = ws.map((w)=>`<button class="aw-wpick-btn ${toId===w.id?"on":""} ${w.id===fromId?"dim":""}" data-to="${w.id}"><span>${walletIcon(w.name)}</span>${esc(w.name)}</button>`).join("");
+    s.querySelectorAll("[data-from]").forEach((b)=>b.onclick=()=>{ fromId=b.dataset.from; if(toId===fromId){ const alt=ws.find((w)=>w.id!==fromId); if(alt) toId=alt.id; } drawPicks(); hint(); });
+    s.querySelectorAll("[data-to]").forEach((b)=>b.onclick=()=>{ if(b.dataset.to===fromId) return; toId=b.dataset.to; drawPicks(); hint(); });
+  }
+  function hint(){
+    const a=parseFloat(s.querySelector("#trAmount").value)||0;
+    const fw=state.wallets.find((w)=>w.id===fromId), tw=state.wallets.find((w)=>w.id===toId);
+    const el=s.querySelector("#trHint");
+    if(a>0 && fw && tw){
+      const fb=walletCurrent(fw), tb=walletCurrent(tw);
+      el.innerHTML=`${esc(fw.name)}: ${fmt(fb)} ← <b>${fmt(fb-a)}</b> &nbsp;•&nbsp; ${esc(tw.name)}: ${fmt(tb)} ← <b>${fmt(tb+a)}</b>`;
+      el.style.display="block";
+    } else el.style.display="none";
+  }
+  drawPicks();
+  s.querySelector("#trAmount").oninput=hint;
+  s.querySelector("#trCancel").onclick=m.close;
+  s.querySelector("#trSave").onclick=()=>{
+    const amt=parseFloat(s.querySelector("#trAmount").value);
+    if(!(amt>0)) return;
+    if(fromId===toId) return;
+    const fw=state.wallets.find((w)=>w.id===fromId), tw=state.wallets.find((w)=>w.id===toId);
+    const dt=s.querySelector("#trDate").value, nt=(s.querySelector("#trNote").value||"").trim();
+    const tag=nt?" — "+nt:"";
+    const tm=nowTime(), gid=uid();
+    state.transactions.push({ id:uid(), type:"expense", amount:amt, cur, category:"transfer_out", account:"personal",
+      walletId:fromId, date:dt, time:tm, transfer:gid, note:`تحويل إلى ${tw.name}${tag}` });
+    state.transactions.push({ id:uid(), type:"income", amount:amt, cur, category:"transfer_in", account:"personal",
+      walletId:toId, date:dt, time:tm, transfer:gid, note:`تحويل من ${fw.name}${tag}` });
+    save(); m.close(); render();
+  };
+}
+
+function openReconcileModal(wallet){
+  const curBal = walletCurrent(wallet);
+  const body = `
+    <div class="aw-mini-hint" style="margin-bottom:10px">قارن الرصيد الحقيقي اللي بإيدك مع اللي بالتطبيق. لو في فرق، التطبيق بيسجّل حركة تسوية بالفرق.</div>
+    <div class="aw-person-sum in"><span>الرصيد بالتطبيق</span><b>${fmt(curBal)} ${esc(wallet.cur)}</b></div>
+    <label class="aw-field-label">الرصيد الحقيقي (اللي عدّيته فعلاً)</label>
+    <div class="aw-amount-wrap"><span class="aw-amount-cur">${esc(wallet.cur)}</span>
+      <input class="aw-amount-input" id="rcActual" type="number" inputmode="decimal" placeholder="${curBal}" autofocus></div>
+    <div class="aw-net-line" id="rcDiff"></div>
+    <label class="aw-field-label">ملاحظة (اختياري)</label>
+    <input class="aw-input" id="rcNote" type="text" placeholder="مثلاً: جرد آخر الشهر">
+    <div class="aw-sheet-actions"><button class="aw-btn ghost" id="rcCancel">إلغاء</button><button class="aw-btn primary" id="rcSave">تسجيل التسوية</button></div>`;
+  const m = modalShell("⚖️ مطابقة — "+esc(wallet.name), body);
+  const s = m.sheet;
+  const inp=s.querySelector("#rcActual"), diffEl=s.querySelector("#rcDiff");
+  function upd(){
+    const v=parseFloat(inp.value);
+    if(isNaN(v)){ diffEl.style.display="none"; return; }
+    const d=Math.round((v-curBal)*100)/100;
+    if(d===0){ diffEl.innerHTML="مطابق تماماً ✓ ما في فرق."; }
+    else if(d>0){ diffEl.innerHTML=`في <b>زيادة ${fmt(d)}</b> ${esc(wallet.cur)} — رح تنسجل حركة تسوية بالزيادة.`; }
+    else { diffEl.innerHTML=`في <b>نقص ${fmt(Math.abs(d))}</b> ${esc(wallet.cur)} — رح تنسجل حركة تسوية بالنقص.`; }
+    diffEl.style.display="block";
+  }
+  inp.oninput=upd;
+  s.querySelector("#rcCancel").onclick=m.close;
+  s.querySelector("#rcSave").onclick=()=>{
+    const v=parseFloat(inp.value); if(isNaN(v)) return;
+    const d=Math.round((v-curBal)*100)/100;
+    if(d!==0){
+      const nt=(s.querySelector("#rcNote").value||"").trim();
+      state.transactions.push({ id:uid(), type: d>0?"income":"expense", amount:Math.abs(d), cur:wallet.cur,
+        category: d>0?"adjust_up":"adjust_down", account:"personal", walletId:wallet.id,
+        date:todayStr(), time:nowTime(),
+        note:`تسوية رصيد ${wallet.name}${nt?" — "+nt:""}` });
+    }
+    save(); m.close(); render();
+  };
+}
+
+function openMatchModal(wallet){
+  const m = modalShell("🏦 مطابقة كشف البنك — "+esc(wallet.name), `<div id="mtBody"></div>`);
+  const body = m.sheet.querySelector("#mtBody");
+  function draw(){
+    const items = state.transactions
+      .filter((t)=>t.walletId===wallet.id && inViewPeriod(t))
+      .sort((a,b)=>(a.date<b.date?1:a.date>b.date?-1:(a.id<b.id?1:a.id>b.id?-1:0)));
+    const matched = items.filter((t)=>t.matched);
+    const unmatched = items.filter((t)=>!t.matched);
+    const sum=(arr)=>arr.reduce((s,t)=>s+(t.type==="income"?t.amount:-t.amount),0);
+    const opening = Number(wallet.opening)||0;
+    const matchedBal = opening + sum(matched);
+    const bookBal = walletCurrent(wallet);
+
+    const row=(t)=>{ const info=catInfo(t.category);
+      return `<label class="aw-mt-row ${t.matched?"on":""}">
+        <input type="checkbox" class="aw-mt-cb" data-mt="${t.id}" ${t.matched?"checked":""}>
+        <span class="aw-mt-main">
+          <span class="aw-mt-top">
+            <span class="aw-mt-amt ${t.type==="income"?"in":"out"}">${t.type==="income"?"+":"−"}${fmt(t.amount)}</span>
+            <span class="aw-mt-cat">${info.icon} ${esc(info.label)}</span>
+          </span>
+          <span class="aw-mt-sub">${esc(t.date)}${t.time?" "+esc(fmtTime(t.time)):""}${t.note?" • "+esc(t.note):""}</span>
+        </span>
+      </label>`; };
+
+    body.innerHTML = `
+      <div class="aw-mini-hint" style="margin-bottom:10px">أشّر ✓ على كل حركة لقيتها بكشف البنك. الباقي بيضل «مش مطابق» — وهاد اللي لازم تراجعه.</div>
+      <div class="aw-mt-grid">
+        <div class="aw-mt-box"><span>رصيد المطابَق</span><b class="in">${fmt(matchedBal)}</b></div>
+        <div class="aw-mt-box"><span>رصيد التطبيق</span><b>${fmt(bookBal)}</b></div>
+        <div class="aw-mt-box"><span>الفرق</span><b class="${Math.abs(bookBal-matchedBal)<0.005?"in":"out"}">${fmt(bookBal-matchedBal)}</b></div>
+      </div>
+      <div class="aw-mini-hint" style="text-align:center;margin:8px 0 14px">
+        مطابَق: ${matched.length} • مش مطابق: ${unmatched.length} — الفترة: ${esc(periodLabel())}
+      </div>
+      <div class="aw-list-head"><span>مش مطابقة</span><span class="aw-list-count">${unmatched.length}</span></div>
+      <div class="aw-mt-list">${unmatched.length?unmatched.map(row).join(""):`<div class="aw-empty">كل الحركات مطابَقة ✓</div>`}</div>
+      ${matched.length?`<div class="aw-list-head" style="margin-top:14px"><span>مطابَقة ✓</span><span class="aw-list-count">${matched.length}</span></div>
+        <div class="aw-mt-list">${matched.map(row).join("")}</div>`:""}
+      <div class="aw-sheet-actions">
+        <button class="aw-btn ghost" id="mtClose">إغلاق</button>
+        <button class="aw-btn" id="mtClear">مسح كل التأشير</button>
+      </div>`;
+
+    body.querySelectorAll("[data-mt]").forEach((cb)=>cb.onchange=()=>{
+      const t=state.transactions.find((x)=>x.id===cb.dataset.mt);
+      if(t){ if(cb.checked) t.matched=true; else delete t.matched; save(); draw(); }
+    });
+    body.querySelector("#mtClose").onclick=m.close;
+    body.querySelector("#mtClear").onclick=()=>confirmDialog("مسح التأشير عن كل حركات هالفترة؟", ()=>{
+      items.forEach((t)=>{ delete t.matched; }); save(); draw();
+    });
+  }
+  draw();
+}
+
 function openWalletDetail(walletId){
   const wl = state.wallets.find((x)=>x.id===walletId);
   if(!wl) return;
@@ -1958,8 +2142,11 @@ function openWalletDetail(walletId){
             </div>
           </div>`; }).join("") : `<div class="aw-empty">ما في حركات على هالمحفظة بهالشهر.</div>`}
       </div>
-      <div class="aw-sheet-actions"><button class="aw-btn ghost" id="wdClose">إغلاق</button><button class="aw-btn primary" id="wdEdit">✏️ تعديل المحفظة</button></div>`;
+      <button class="aw-btn" id="wdMatch" style="width:100%;margin-top:8px">🏦 مطابقة كشف البنك</button>
+      <div class="aw-sheet-actions"><button class="aw-btn ghost" id="wdClose">إغلاق</button><button class="aw-btn" id="wdRec">⚖️ مطابقة الرصيد</button><button class="aw-btn primary" id="wdEdit">✏️ تعديل المحفظة</button></div>`;
     body.querySelector("#wdClose").onclick=m.close;
+    body.querySelector("#wdMatch").onclick=()=>{ m.close(); openMatchModal(wl); };
+    body.querySelector("#wdRec").onclick=()=>{ m.close(); openReconcileModal(wl); };
     body.querySelector("#wdEdit").onclick=()=>{ m.close(); openWalletModal(wl); };
   }
   draw();

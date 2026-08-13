@@ -394,3 +394,26 @@ body{font-family:-apple-system,"SF Arabic","Segoe UI",system-ui,sans-serif;backg
 .aw-pay-amt{font-size:13px;font-weight:800;color:var(--income);white-space:nowrap;font-variant-numeric:tabular-nums;}
 .aw-pay-meta{flex:1;font-size:11px;color:var(--ink-soft);line-height:1.6;}
 .aw-pay-del{background:none;border:none;color:var(--expense);font-size:13px;font-weight:700;cursor:pointer;padding:2px 6px;font-family:inherit;}
+
+/* تحويل بين المحافظ + المطابقة */
+.aw-transfer-btn{width:100%;margin-bottom:12px;}
+.aw-wpick-btn.dim{opacity:.35;}
+
+/* مطابقة كشف البنك */
+.aw-mt-grid{display:flex;gap:8px;margin-bottom:6px;}
+.aw-mt-box{flex:1;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:10px 6px;text-align:center;}
+.aw-mt-box span{display:block;font-size:11px;color:var(--ink-soft);margin-bottom:4px;}
+.aw-mt-box b{font-size:16px;font-variant-numeric:tabular-nums;}
+.aw-mt-box b.in{color:var(--income);}
+.aw-mt-box b.out{color:var(--expense);}
+.aw-mt-list{max-height:340px;overflow-y:auto;-webkit-overflow-scrolling:touch;}
+.aw-mt-row{display:flex;align-items:center;gap:10px;padding:10px;background:var(--surface);border:1px solid var(--line);
+  border-radius:11px;margin-bottom:6px;cursor:pointer;}
+.aw-mt-row.on{background:var(--card-soft);border-color:var(--income);}
+.aw-mt-cb{width:22px;height:22px;accent-color:var(--income);flex-shrink:0;}
+.aw-mt-main{flex:1;min-width:0;}
+.aw-mt-top{display:flex;align-items:center;justify-content:space-between;gap:8px;}
+.aw-mt-amt{font-size:15px;font-weight:800;font-variant-numeric:tabular-nums;}
+.aw-mt-amt.in{color:var(--income);} .aw-mt-amt.out{color:var(--expense);}
+.aw-mt-cat{font-size:13px;font-weight:700;color:var(--ink);}
+.aw-mt-sub{display:block;font-size:11px;color:var(--ink-soft);margin-top:3px;line-height:1.6;}
