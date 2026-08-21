@@ -301,13 +301,43 @@ function render() {
   let banner = "";
   if (st.kind === "trial") banner = trialBannerHTML(st.days);
   else if (st.kind === "pro" && st.plan && st.plan !== "life") banner = subBannerHTML(st);
-  a.innerHTML = headerHTML() + curPillsHTML() + banner + tabsHTML() + tabContentHTML() + creditHTML() + fabHTML();
+  a.innerHTML = headerHTML() + curPillsHTML() + banner + backupBannerHTML() + tabsHTML() + tabContentHTML() + creditHTML() + fabHTML();
   attachHandlers();
 }
 
 function creditHTML(){ return `<div class="aw-credit">تم التصميم بواسطة Mohammed R Alholi</div>`; }
 
 const WELCOME_KEY = "daftar-welcomed-v1";
+const BACKUP_KEY = "daftar-lastbackup-v1";
+const BACKUP_DAYS = 14;   // كل كم يوم نذكّر
+
+function lastBackupAt(){ try{ return localStorage.getItem(BACKUP_KEY)||""; }catch(e){ return ""; } }
+function markBackupNow(){ try{ localStorage.setItem(BACKUP_KEY, todayStr()); }catch(e){} }
+function daysSinceBackup(){
+  const d=lastBackupAt();
+  if(!d) return null;                       // ما أخد ولا نسخة أبداً
+  const a=new Date(d+"T00:00:00"), b=new Date(todayStr()+"T00:00:00");
+  return Math.round((b-a)/86400000);
+}
+function needsBackup(){
+  if(!state.transactions.length && !state.debts.length) return false;  // ما في بيانات أصلاً
+  const n=daysSinceBackup();
+  return n===null || n>=BACKUP_DAYS;
+}
+function backupBannerHTML(){
+  if(!needsBackup()) return "";
+  const n=daysSinceBackup();
+  const msg = n===null
+    ? "ما أخذت نسخة احتياطية لبياناتك بعد."
+    : `صار لك ${n} يوم بدون نسخة احتياطية.`;
+  return `<div class="aw-bk-banner">
+      <div class="aw-bk-txt"><b>🛡️ احمِ بياناتك</b><span>${esc(msg)} لو ضاع جوالك أو انحذف التطبيق، بتضيع.</span></div>
+      <div class="aw-bk-actions">
+        <button class="aw-bk-go" data-act="doBackup">خُد نسخة</button>
+        <button class="aw-bk-later" data-act="laterBackup">لاحقاً</button>
+      </div>
+    </div>`;
+}
 function isStandalone(){ try{ return (window.navigator.standalone===true) || (window.matchMedia && window.matchMedia("(display-mode: standalone)").matches); }catch(e){ return false; } }
 function openWelcome(){
   const standalone = isStandalone();
@@ -1084,6 +1114,8 @@ function attachHandlers() {
 
   a.querySelectorAll("[data-act]").forEach((b)=>b.onclick=(e)=>{
     const act=b.dataset.act;
+    if (act==="doBackup") { exportJSON(); }
+    if (act==="laterBackup") { try{ const d=new Date(); d.setDate(d.getDate()-(BACKUP_DAYS-3)); localStorage.setItem(BACKUP_KEY, d.toISOString().slice(0,10)); }catch(e){} render(); }
     if (act==="transfer") openTransferModal();
     if (act==="openRange") openRangeModal();
     if (act==="clearRange") { state.range=null; render(); }
@@ -1909,7 +1941,9 @@ function openSettings() {
     ${isOwner()?`<button class="aw-set-btn" id="payBtn">💳 إعدادات الدفع</button>`:""}
     ${isOwner()?`<button class="aw-set-btn" id="keygenBtn">🔑 توليد أكواد التفعيل</button>`:""}
     <button class="aw-set-btn" id="expCsv">📊 تصدير الحركات (CSV / Excel)</button>
-    <button class="aw-set-btn" id="expJson">💾 نسخة احتياطية كاملة (JSON)</button>
+    <button class="aw-set-btn" id="expJson">💾 نسخة احتياطية (ملف واحد يتحدّث)</button>
+    <button class="aw-set-btn" id="expJsonDated">🗄️ نسخة أرشيف (باسم اليوم)</button>
+    <div class="aw-bk-note">${lastBackupAt()?`آخر نسخة احتياطية: ${esc(lastBackupAt())}`:"ما أخذت نسخة احتياطية بعد ⚠️"}</div>
     <label class="aw-set-btn" id="impLbl">📥 استرجاع نسخة احتياطية<input type="file" id="impFile" accept="application/json,.json" hidden></label>
     <button class="aw-set-btn danger" id="wipe">🗑️ مسح كل البيانات</button>
     <div class="aw-sheet-actions"><button class="aw-btn ghost" id="setClose">إغلاق</button></div>`;
@@ -1928,7 +1962,8 @@ function openSettings() {
   const payB = s.querySelector("#payBtn"); if (payB) payB.onclick=()=>{ m.close(); openPayEditor(); };
   const kgB = s.querySelector("#keygenBtn"); if (kgB) kgB.onclick=()=>{ m.close(); openKeygenModal(); };
   s.querySelector("#expCsv").onclick=exportCSV;
-  s.querySelector("#expJson").onclick=exportJSON;
+  s.querySelector("#expJson").onclick=()=>exportJSON(false);
+  s.querySelector("#expJsonDated").onclick=()=>exportJSON(true);
   s.querySelector("#wipe").onclick=()=>confirmDialog("متأكد؟ رح ينمسح كل شي ولا في رجعة.", ()=>{ state.transactions=[];state.debts=[];state.wallets=[]; save(); m.close(); render(); });
   s.querySelector("#impFile").onchange=(e)=>{ const f=e.target.files[0]; if(!f)return; const r=new FileReader();
     r.onload=()=>{ try{ const data=JSON.parse(r.result);
@@ -2021,12 +2056,15 @@ function download(filename, text, mime) {
   const a = document.createElement("a"); a.href=url; a.download=filename; document.body.appendChild(a); a.click();
   setTimeout(()=>{ a.remove(); URL.revokeObjectURL(url); }, 100);
 }
-function exportJSON() {
-  download(`daftar-backup-${todayStr()}.json`, JSON.stringify({
+function exportJSON(dated) {
+  const name = dated ? `daftar-backup-${todayStr()}.json` : `daftar-backup.json`;
+  download(name, JSON.stringify({
     transactions:state.transactions, debts:state.debts, wallets:state.wallets, cats:state.cats, activeCur:state.activeCur,
     employees:state.employees||[],
     exportedAt: new Date().toISOString(),
   }, null, 2), "application/json");
+  markBackupNow();
+  render();
 }
 function exportCSV() {
   const head = ["التاريخ","النوع","العملة","المبلغ","التصنيف","الحساب","المحفظة","ملاحظة"];
