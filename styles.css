@@ -417,3 +417,6 @@ body{font-family:-apple-system,"SF Arabic","Segoe UI",system-ui,sans-serif;backg
 .aw-mt-amt.in{color:var(--income);} .aw-mt-amt.out{color:var(--expense);}
 .aw-mt-cat{font-size:13px;font-weight:700;color:var(--ink);}
 .aw-mt-sub{display:block;font-size:11px;color:var(--ink-soft);margin-top:3px;line-height:1.6;}
+
+/* سداد بعملة مختلفة */
+.aw-pay-fx{font-size:11px;color:var(--gold);font-weight:700;}

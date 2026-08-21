@@ -430,6 +430,9 @@ body{font-family:-apple-system,"SF Arabic","Segoe UI",system-ui,sans-serif;backg
 .aw-mt-amt.in{color:var(--income);} .aw-mt-amt.out{color:var(--expense);}
 .aw-mt-cat{font-size:13px;font-weight:700;color:var(--ink);}
 .aw-mt-sub{display:block;font-size:11px;color:var(--ink-soft);margin-top:3px;line-height:1.6;}
+
+/* سداد بعملة مختلفة */
+.aw-pay-fx{font-size:11px;color:var(--gold);font-weight:700;}
 </style></head><body>
 <div id="app" class="aw-root"><div class="aw-loading">جاري التحميل…</div></div>
 <script>
@@ -1174,7 +1177,7 @@ function openPersonModal(name, type){
             ${(d.pays&&d.pays.length)?`<div class="aw-pays">
               <div class="aw-pays-h">الدفعات (${d.pays.length})</div>
               ${d.pays.slice().sort((x,y)=>x.date<y.date?1:-1).map((pp)=>`<div class="aw-pay-row">
-                <span class="aw-pay-amt">${fmt(pp.amount)} ${esc(d.cur)}</span>
+                <span class="aw-pay-amt">${fmt(pp.amount)} ${esc(d.cur)}${pp.payCur?` <span class="aw-pay-fx">(${fmt(pp.payAmount)} ${esc(pp.payCur)})</span>`:""}</span>
                 <span class="aw-pay-meta">${esc(pp.date)}${pp.time?" "+esc(fmtTime(pp.time)):""}${pp.note?" • "+esc(pp.note):""}</span>
                 <button class="aw-pay-del" data-paydel="${d.id}|${pp.id}" aria-label="حذف الدفعة">✕</button>
               </div>`).join("")}
@@ -2239,36 +2242,95 @@ function openPayModal(debt, onDone) {
   const rem = Math.max(0, debt.amount-(debt.paid||0));
   const mine = debt.type==="owed_to_me";
   let walletId = "";
-  const ws = state.wallets.filter((w)=>w.cur===debt.cur);
+  let payCur = debt.cur;          // العملة اللي استلمت/دفعت فيها
+  let rate = 1;                   // كم يساوي 1 من payCur بعملة الدين
+
   const body = `
     <div class="aw-pay-rem">المتبقّي: <b>${fmt(rem)} ${esc(debt.cur)}</b></div>
-    <label class="aw-field-label">قيمة التسديد</label>
-    <div class="aw-amount-wrap"><span class="aw-amount-cur">${esc(debt.cur)}</span>
+
+    <label class="aw-field-label">${mine?"استلمت بأي عملة؟":"دفعت بأي عملة؟"}</label>
+    ${curPickerHTML(payCur,"pay")}
+
+    <label class="aw-field-label">المبلغ <span id="pCurLbl">(${esc(debt.cur)})</span></label>
+    <div class="aw-amount-wrap"><span class="aw-amount-cur" id="pCurSym">${esc(debt.cur)}</span>
       <input class="aw-amount-input" id="pAmount" type="number" inputmode="decimal" placeholder="0" value="${rem}" autofocus></div>
-    <label class="aw-field-label">${mine?"لأي محفظة دخلت الفلوس؟":"من أي محفظة دفعت؟"} (اختياري)</label>
-    <div class="aw-wallet-pick" id="pWallets">
-      ${ws.map((w)=>`<button class="aw-wpick-btn" data-w="${w.id}"><span>${walletIcon(w.name)}</span>${esc(w.name)}</button>`).join("")}
-      <button class="aw-wpick-btn on" data-w="">بدون محفظة</button>
+
+    <div id="pFxWrap" style="display:none">
+      <label class="aw-field-label">سعر الصرف — كم <b id="pFxFrom">${esc(debt.cur)}</b> بالـ<b id="pFxTo">${esc(debt.cur)}</b>؟</label>
+      <div class="aw-amount-wrap"><span class="aw-amount-cur">×</span>
+        <input class="aw-amount-input" id="pRate" type="number" inputmode="decimal" placeholder="3.7"></div>
+      <div class="aw-net-line" id="pFxLine"></div>
     </div>
+
+    <label class="aw-field-label">${mine?"لأي محفظة دخلت الفلوس؟":"من أي محفظة دفعت؟"} (اختياري)</label>
+    <div class="aw-wallet-pick" id="pWallets"></div>
+
     <label class="aw-field-label">ملاحظة (اختياري)</label>
     <input class="aw-input" id="pNote" type="text" placeholder="مثلاً: أخذ من الأمانة، دفعة أولى...">
     <div class="aw-sheet-actions"><button class="aw-btn ghost" id="pCancel">إلغاء</button><button class="aw-btn primary" id="pSave">تسجيل</button></div>`;
   const m = modalShell("تسديد — "+esc(debt.name), body);
   const s = m.sheet;
-  s.querySelectorAll("#pWallets [data-w]").forEach((b)=>b.onclick=()=>{ walletId=b.dataset.w; s.querySelectorAll("#pWallets [data-w]").forEach((x)=>x.classList.toggle("on", x.dataset.w===walletId)); });
+  const amtI=s.querySelector("#pAmount"), rateI=s.querySelector("#pRate");
+
+  function drawWallets(){
+    const ws = state.wallets.filter((w)=>w.cur===payCur);
+    s.querySelector("#pWallets").innerHTML =
+      ws.map((w)=>`<button class="aw-wpick-btn ${walletId===w.id?"on":""}" data-w="${w.id}"><span>${walletIcon(w.name)}</span>${esc(w.name)}</button>`).join("")
+      + `<button class="aw-wpick-btn ${walletId===""?"on":""}" data-w="">بدون محفظة</button>`
+      + (ws.length?"":`<div class="aw-mini-hint">ما في محافظ بعملة ${esc(payCur)}.</div>`);
+    s.querySelectorAll("#pWallets [data-w]").forEach((b)=>b.onclick=()=>{ walletId=b.dataset.w; drawWallets(); });
+  }
+  function fxUpdate(){
+    const diff = payCur!==debt.cur;
+    s.querySelector("#pFxWrap").style.display = diff?"block":"none";
+    s.querySelector("#pCurSym").textContent = payCur;
+    s.querySelector("#pCurLbl").textContent = "("+payCur+")";
+    s.querySelector("#pFxFrom").textContent = payCur;
+    s.querySelector("#pFxTo").textContent = debt.cur;
+    const line=s.querySelector("#pFxLine");
+    if(diff){
+      const a=parseFloat(amtI.value)||0, r=parseFloat(rateI.value)||0;
+      if(a>0&&r>0){
+        const conv=Math.round(a*r*100)/100;
+        const after=Math.max(0, Math.round((rem-conv)*100)/100);
+        line.innerHTML = `${fmt(a)} ${esc(payCur)} × ${r} = <b>${fmt(conv)} ${esc(debt.cur)}</b> — الباقي بعدها: <b>${fmt(after)} ${esc(debt.cur)}</b>`;
+        line.style.display="block";
+      } else { line.style.display="none"; }
+    } else line.style.display="none";
+  }
+  s.querySelector('[data-curpick="pay"]').querySelectorAll("[data-cv]").forEach((b)=>b.onclick=()=>{
+    payCur=b.dataset.cv;
+    s.querySelectorAll('[data-curpick="pay"] [data-cv]').forEach((x)=>x.classList.toggle("on", x.dataset.cv===payCur));
+    walletId=""; if(payCur===debt.cur){ amtI.value=rem; } else { amtI.value=""; }
+    drawWallets(); fxUpdate();
+  });
+  amtI.oninput=fxUpdate; rateI.oninput=fxUpdate;
+  drawWallets(); fxUpdate();
+
   s.querySelector("#pCancel").onclick=m.close;
   s.querySelector("#pSave").onclick=()=>{
-    let amt=parseFloat(s.querySelector("#pAmount").value); if(!(amt>0))return; amt=Math.min(rem,amt);
+    const raw=parseFloat(amtI.value); if(!(raw>0))return;
+    const diff = payCur!==debt.cur;
+    const r = diff ? parseFloat(rateI.value) : 1;
+    if(diff && !(r>0)){ alert("اكتب سعر الصرف."); return; }
+    // المبلغ بعملة الدين (اللي بينخصم من الدين)
+    let amt = Math.round(raw*r*100)/100;
+    amt = Math.min(rem, amt);
     const pnote=(s.querySelector("#pNote").value||"").trim();
-    const entry={ id:uid(), amount:amt, date:todayStr(), time:nowTime(), note:pnote, walletId:walletId||null };
+    const fxNote = diff ? `${fmt(raw)} ${payCur} × ${r}` : "";
+    const fullNote = [pnote, fxNote].filter(Boolean).join(" — ");
+
+    const entry={ id:uid(), amount:amt, date:todayStr(), time:nowTime(), note:fullNote, walletId:walletId||null,
+                  payCur: diff?payCur:undefined, payAmount: diff?raw:undefined, rate: diff?r:undefined };
     state.debts = state.debts.map((d)=> d.id===debt.id
       ? {...d, paid: Math.min(d.amount,(d.paid||0)+amt), pays: (d.pays||[]).concat([entry]) }
       : d);
     if (walletId) {
-      state.transactions.push({ id:uid(), type: mine?"income":"expense", amount:amt, cur:debt.cur,
+      // الحركة بتنسجل بعملة المحفظة (عملة الدفع) وبالمبلغ الفعلي
+      state.transactions.push({ id:uid(), type: mine?"income":"expense", amount:raw, cur:payCur,
         category: mine?"debt_collect":"debt_payment", account:"personal", walletId,
         date:todayStr(), time:nowTime(),
-        note:(mine?"تحصيل من ":"تسديد لـ ")+debt.name+(pnote?" — "+pnote:"") });
+        note:(mine?"تحصيل من ":"تسديد لـ ")+debt.name+(fullNote?" — "+fullNote:"") });
     }
     save(); m.close(); render(); if(onDone) onDone();
   };
